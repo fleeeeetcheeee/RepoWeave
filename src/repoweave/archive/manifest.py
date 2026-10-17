@@ -42,7 +42,10 @@ class Entry(BaseModel):
             if (
                 part in ("", ".", "..") or part.endswith((".", " "))
                 or len(part.encode("utf-8")) > 255
-                or re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]", part.split(".")[0], re.I)
+                or re.fullmatch(
+                    r"CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]",
+                    part.split(".")[0], re.IGNORECASE,
+                )
             ):
                 raise ValueError("path contains an unsafe component")
         return path
