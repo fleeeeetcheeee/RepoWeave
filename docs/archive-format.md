@@ -149,7 +149,7 @@ encoded lengths, and assigns offsets. If compressed output plus its incremental
 metadata is larger than stored output, select stored. This decision belongs to
 assembly because codecs do not know manifest overhead.
 
-These fields and the restricted codec parameters are the proposed shared V1
-contract; inventory and codec integration still need verification when those
-implementations are available. No imports from their unfinished modules are
-required to validate a manifest.
+The codec implementation follows these IDs, parameters, and per-file bounds;
+see [the codec API](codecs.md). Manifest validation shares option validation and
+size limits with `codecs/base.py`. Inventory and full archive integration still
+need verification when assembly is implemented.

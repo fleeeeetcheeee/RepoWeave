@@ -8,15 +8,15 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from repoweave.codecs.base import MAX_ENCODED_FILE_BYTES, MAX_FILE_BYTES, validate_options
+
 MAGIC = b"RPWEAVE\0"
 VERSION = 1
 HEADER = struct.Struct(">8sHQ")
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_ENTRIES = 100_000
-MAX_FILE_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_BYTES = 1024 * 1024 * 1024
 MAX_PAYLOAD_BYTES = 2 * MAX_TOTAL_BYTES
-MAX_ENCODED_FILE_BYTES = 2 * MAX_FILE_BYTES
 
 
 class ArchiveFormatError(ValueError):
@@ -69,11 +69,7 @@ class FileEntry(Entry):
     def codec_metadata(self) -> Self:
         if self.executable_bits & ~0o111:
             raise ValueError("only executable permission bits are supported")
-        bounds = {"stored": {}, "zstd": {"level": (-7, 22)}, "lzma": {"preset": (0, 9)}}
-        for name, value in self.parameters.items():
-            limits = bounds[self.codec].get(name)
-            if limits is None or not limits[0] <= value <= limits[1]:
-                raise ValueError("unsupported codec parameter")
+        validate_options(self.codec, self.parameters, {})
         if self.codec == "stored" and self.length != self.size:
             raise ValueError("stored payload length must equal file size")
         return self
