@@ -1,3 +1,4 @@
+---
 name: codec-reviewer
 description: Reviews lossless archive correctness and decoder compatibility
 model: inherit
