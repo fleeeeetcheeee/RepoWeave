@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from repoweave.archive.manifest import FileEntry
 from repoweave.repository import RepositoryError, create_snapshot
 from repoweave.repository import snapshot as snapshot_module
 from repoweave.repository.paths import validate_relative_path
@@ -50,7 +51,8 @@ def test_exact_stable_capture_and_independence(repository: Path, tmp_path: Path)
             assert entry.sha256 == hashlib.sha256(captured.read_bytes()).hexdigest()
             assert captured.stat().st_ino != original.stat().st_ino
             assert not captured.stat().st_mode & 0o222
-            assert bool(captured.stat().st_mode & 0o111) == entry.executable
+            assert captured.stat().st_mode & 0o111 == entry.executable_bits
+            assert entry.executable_bits == original.stat().st_mode & 0o111
     report = first.to_report()
     assert report["file_count"] == 8
     assert "This fixture must never execute" not in json.dumps(report)
@@ -62,7 +64,7 @@ def test_exact_stable_capture_and_independence(repository: Path, tmp_path: Path)
     assert create_snapshot(repository, store).snapshot_id != first.snapshot_id
 
 
-def test_identity_includes_paths_directories_and_executable_status(
+def test_identity_includes_paths_directories_and_executable_bits(
     repository: Path, tmp_path: Path,
 ) -> None:
     store = tmp_path / "snapshots"
@@ -74,6 +76,37 @@ def test_identity_includes_paths_directories_and_executable_status(
     (repository / "another-empty-directory").mkdir()
     identities.append(create_snapshot(repository, store).snapshot_id)
     assert len(set(identities)) == 4
+
+
+def test_executable_masks_survive_snapshot_and_archive_metadata(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    source = root / "script"
+    source.write_bytes(b"synthetic bytes, never executed\n")
+    identities = set()
+    for bits in (0o000, 0o001, 0o010, 0o011, 0o100, 0o101, 0o110, 0o111):
+        source.chmod(0o600 | bits)
+        snapshot = create_snapshot(root, tmp_path / "snapshots")
+        entry = snapshot.entries[0]
+        assert type(entry.executable_bits) is int
+        assert entry.executable_bits == bits
+        assert (snapshot.files_root / entry.path).stat().st_mode & 0o7777 == 0o400 | bits
+        assert (snapshot.files_root / entry.path).read_bytes() == source.read_bytes()
+        report = snapshot.to_report()
+        assert report["schema_version"] == 2
+        assert report["scope"] == "regular-files-directories-executable-v2"
+        assert entry.to_dict()["executable_bits"] == bits
+        assert "executable" not in entry.to_dict()
+        assert json.loads((snapshot.files_root.parent / "report.json").read_text()) == report
+        archived = FileEntry(
+            kind="file", path=entry.path, size=entry.size_bytes, sha256=entry.sha256,
+            executable_bits=entry.executable_bits, codec="stored", parameters={},
+            offset=0, length=entry.size_bytes,
+        )
+        assert archived.executable_bits == bits
+        identities.add(snapshot.snapshot_id)
+    assert len(identities) == 8
+    assert create_snapshot(root, tmp_path / "snapshots").snapshot_id == snapshot.snapshot_id
 
 
 def test_exclusions_are_visible_and_never_opened(

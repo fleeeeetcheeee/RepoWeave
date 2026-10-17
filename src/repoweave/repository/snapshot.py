@@ -13,7 +13,8 @@ from typing import Literal
 from repoweave.repository.inventory import Exclusion, SourceEntry, iter_inventory
 from repoweave.repository.paths import RepositoryError, excluded_relative_paths
 
-SCOPE = "regular-files-directories-executable-v1"
+SCHEMA_VERSION = 2
+SCOPE = "regular-files-directories-executable-v2"
 
 
 @dataclass(frozen=True)
@@ -22,7 +23,7 @@ class Entry:
     kind: Literal["file", "directory"]
     size_bytes: int | None = None
     sha256: str | None = None
-    executable: bool | None = None
+    executable_bits: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {key: value for key, value in asdict(self).items() if value is not None}
@@ -38,7 +39,7 @@ class Snapshot:
     def to_report(self) -> dict[str, object]:
         """Stable metadata only; local storage location is deliberately separate."""
         return {
-            "schema_version": 1,
+            "schema_version": SCHEMA_VERSION,
             "scope": SCOPE,
             "snapshot_id": self.snapshot_id,
             "entries": [entry.to_dict() for entry in self.entries],
@@ -78,9 +79,9 @@ def _copy_file(source: SourceEntry, destination: Path) -> Entry:
             or before.st_ctime_ns != after.st_ctime_ns
         ):
             raise RepositoryError("A source file changed during capture")
-    executable = bool(before.st_mode & 0o111)
-    destination.chmod(0o500 if executable else 0o400)
-    return Entry(source.path, "file", size, digest.hexdigest(), executable)
+    executable_bits = before.st_mode & 0o111
+    destination.chmod(0o400 | executable_bits)
+    return Entry(source.path, "file", size, digest.hexdigest(), executable_bits)
 
 
 def create_snapshot(
@@ -122,7 +123,7 @@ def create_snapshot(
             inventory.close()
         ordered_entries = tuple(sorted(entries, key=lambda entry: entry.path))
         manifest = {
-            "schema_version": 1, "scope": SCOPE,
+            "schema_version": SCHEMA_VERSION, "scope": SCOPE,
             "entries": [entry.to_dict() for entry in ordered_entries],
         }
         canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True)

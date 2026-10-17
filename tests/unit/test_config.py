@@ -143,6 +143,31 @@ def test_daytona_requires_settings_and_dataset_approval(monkeypatch: pytest.Monk
     settings.validate_daytona(dataset_id="fixture", approved_dataset_ids={"fixture"})
 
 
+@pytest.mark.parametrize("approvals", [
+    "not-private", "private", b"private", {"private": True}, ["private", 1], None,
+])
+def test_daytona_rejects_invalid_approval_collections(approvals) -> None:
+    settings = Settings(
+        DAYTONA_API_KEY="synthetic-key", REPOWEAVE_DAYTONA_SNAPSHOT="fixture",
+        REPOWEAVE_ALLOW_REMOTE_DATA=True,
+    )
+    with pytest.raises(ConfigurationError, match="collection of dataset IDs"):
+        settings.validate_daytona(dataset_id="private", approved_dataset_ids=approvals)
+
+
+@pytest.mark.parametrize("collection", [set, frozenset, list, tuple])
+def test_daytona_approval_requires_exact_id(collection) -> None:
+    settings = Settings(
+        DAYTONA_API_KEY="synthetic-key", REPOWEAVE_DAYTONA_SNAPSHOT="fixture",
+        REPOWEAVE_ALLOW_REMOTE_DATA=True,
+    )
+    with pytest.raises(ConfigurationError, match="explicit remote-data approval"):
+        settings.validate_daytona(
+            dataset_id="private", approved_dataset_ids=collection(["not-private"]),
+        )
+    settings.validate_daytona(dataset_id="private", approved_dataset_ids=collection(["private"]))
+
+
 def test_unreadable_configuration_is_secret_safe() -> None:
     secret = "invalid-secret-bytes"
     Path(".env").write_bytes(secret.encode() + b"\xff")

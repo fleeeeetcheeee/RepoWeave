@@ -7,7 +7,7 @@ Keep the existing CLI/configuration behavior and dependency lockfile.
 
 Provide create_snapshot(input_root, snapshots_dir, *, exclude_paths=()) returning
 snapshot_id, files_root, sorted entries, and exclusions. Capture regular files,
-directories (including empty ones), file bytes, and executable status. Hash copied
+directories (including empty ones), file bytes, and exact executable bits (`mode & 0o111`). Hash copied
 bytes, never reopen original files for downstream encoding. Reject unsafe paths;
 report secret/build/output exclusions, symlinks, and special files. Fail explicitly
 on unreadable supported inputs. Publish only complete snapshots and preserve old data.

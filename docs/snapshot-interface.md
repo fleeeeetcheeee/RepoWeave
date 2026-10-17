@@ -15,28 +15,36 @@ cloud, or source-execution side effects.
 
 ## Entries and identity
 
-A file entry contains `path`, `kind="file"`, `size_bytes`, `sha256`, and a boolean
-`executable`. A directory entry contains only `path` and `kind="directory"` when
+A file entry contains `path`, `kind="file"`, `size_bytes`, `sha256`, and integer
+`executable_bits` containing the original `mode & 0o111` mask. Pass this mask
+directly to the archive entry's `executable_bits` field. A directory entry contains
+only `path` and `kind="directory"` when
 serialized with `to_dict()`. The root itself is implicit; empty directories are
 preserved. Paths use `/`, retain Unicode spelling, and cannot be absolute, contain
 empty/`.`/`..` components, backslashes, colons, control characters, or invalid UTF-8.
 Destination collisions fail capture instead of overwriting copied files.
 
-The supported scope is `regular-files-directories-executable-v1`: file bytes,
-relative paths, directories, and whether any file executable bit was set. Exact
-permission masks, directory permissions, ownership, timestamps, extended attributes,
+The supported scope is `regular-files-directories-executable-v2`: file bytes,
+relative paths, directories, and each file's owner/group/other executable bits.
+Other permission bits, directory permissions, ownership, timestamps, extended attributes,
 hard-link relationships, symlinks, and special files are not preserved.
 
 `snapshot_id` is the lowercase SHA-256 hex digest of UTF-8 JSON with this content:
 
 ```json
-{"schema_version":1,"scope":"regular-files-directories-executable-v1","entries":[]}
+{"schema_version":2,"scope":"regular-files-directories-executable-v2","entries":[]}
 ```
 
 Replace `entries` with the sorted serialized entries, then serialize using
 `sort_keys=True`, `separators=(",", ":")`, and `ensure_ascii=True`. There is no trailing
 newline in the hashed input. Each file hash describes the bytes actually copied.
 Storage paths, capture times, and exclusions do not participate in content identity.
+
+Schema version 2 replaces the version 1 boolean `executable` field. Existing
+version 1 snapshots are left untouched, but cannot supply the original executable
+mask; recapture the source before using them for V1 archives. Version 2 changes
+snapshot identities, including for otherwise unchanged inputs. This snapshot
+report version is separate from the `.rpw` archive format version, which remains 1.
 
 ## Storage and failures
 
@@ -45,7 +53,8 @@ and `report.json`. A temporary directory is renamed into place only after copyin
 report creation succeed. Identical captures share an identity but currently occupy
 separate directories. Existing snapshots are never replaced or automatically deleted.
 
-Copies are independent of source files, and copied files have their write bits removed.
+Copies are independent of source files. Copied file modes are `0o400 | executable_bits`:
+owner-readable, with the original executable bits and no write or special bits.
 Consumers must treat the entire snapshot directory as immutable; the local file owner
 can still deliberately modify it. This is not tamper-proof storage.
 

@@ -57,7 +57,9 @@ def test_analyze_captures_input_without_credentials(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
     contents = json.loads(report.read_text())
-    assert contents["scope"] == "regular-files-directories-executable-v1"
+    assert contents["schema_version"] == 2
+    assert contents["scope"] == "regular-files-directories-executable-v2"
+    assert contents["entries"][0]["executable_bits"] == 0
     assert contents["total_bytes"] == 9
     assert [entry["path"] for entry in contents["entries"]] == ["hello.txt"]
     assert {entry["path"] for entry in contents["exclusions"]} == {

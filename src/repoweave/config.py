@@ -1,7 +1,6 @@
 """Load settings at application entrypoints; check integrations only when used."""
 
 import os
-from collections.abc import Collection
 from pathlib import Path
 from typing import Literal
 
@@ -58,7 +57,10 @@ class Settings(BaseModel):
         if self.langsmith_tracing and self.langsmith_api_key is None:
             raise ConfigurationError("LANGSMITH_API_KEY is required when LANGSMITH_TRACING is enabled")
 
-    def validate_daytona(self, *, dataset_id: str, approved_dataset_ids: Collection[str]) -> None:
+    def validate_daytona(
+        self, *, dataset_id: str,
+        approved_dataset_ids: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+    ) -> None:
         """Call before staging data, using the approvals persisted with the run."""
         if self.daytona_api_key is None:
             raise ConfigurationError("DAYTONA_API_KEY is required for Daytona jobs")
@@ -66,6 +68,11 @@ class Settings(BaseModel):
             raise ConfigurationError("REPOWEAVE_DAYTONA_SNAPSHOT is required for Daytona jobs")
         if not self.allow_remote_data:
             raise ConfigurationError("REPOWEAVE_ALLOW_REMOTE_DATA must be enabled for Daytona jobs")
+        if (
+            not isinstance(approved_dataset_ids, (set, frozenset, list, tuple))
+            or not all(isinstance(value, str) for value in approved_dataset_ids)
+        ):
+            raise ConfigurationError("Remote-data approvals must be a collection of dataset IDs")
         if not dataset_id or dataset_id not in approved_dataset_ids:
             raise ConfigurationError("The selected dataset requires explicit remote-data approval")
 
