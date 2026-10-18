@@ -1,0 +1,6 @@
+# Build from the generated, reviewed context; never send the developer checkout.
+**
+!Dockerfile
+!requirements.txt
+!repoweave_engine-0.1.0-py3-none-any.whl
+!smoke_engine.py

@@ -137,9 +137,70 @@ events, setup/transport failures, deadlines, cancellation, resource cleanup,
 secret-safe errors, and unchanged policies after failure. Existing benchmark CLI
 coverage now also validates conversion of a real report into sanitized evidence.
 
+## Daytona snapshot preparation
+
+Prepared the engine-only wheel build, digest-pinned Python Dockerfile, hashed
+dependency requirements from `uv.lock`, and a five-file allowlisted upload context.
+The image build runs a synthetic RPW/tar-zstd/tar-lzma reconstruction, replay, and
+independent-decoder smoke test as an unprivileged user. See
+[snapshot preparation and creation](daytona-snapshot.md).
+
+Verified October 17, 2026:
+
+```bash
+.venv/bin/pytest tests/unit tests/integration -q
+.venv/bin/pytest tests/unit/test_engine_image.py -q
+.venv/bin/ruff check scripts/prepare_engine_image.py scripts/create_daytona_snapshot.py deploy/smoke_engine.py tests/unit/test_engine_image.py src/repoweave/execution/experiment_entrypoint.py src/repoweave/experiments/schemas.py
+.venv/bin/mypy src/repoweave/experiments/schemas.py src/repoweave/execution/experiment_entrypoint.py scripts/prepare_engine_image.py scripts/create_daytona_snapshot.py deploy/smoke_engine.py
+git diff --check
+```
+
+The full local suite passed **415 tests in 36.10 seconds**. After adding mocked
+snapshot creation/reuse coverage, the focused file passed **6 tests in 1.12 seconds**.
+The listed Ruff and mypy checks passed. The local wheel build passed and its
+contents matched the engine source allowlist exactly.
+
+After the configured key's permissions were corrected, the authorized retry on
+October 18, 2026 created **`repoweave-engine-v1`**, confirmed **active** by Daytona.
+Snapshot ID: `d8029be9-168f-4df7-91b1-2da0cc24e28c`; region `us`; 2 CPUs, 4 GiB RAM,
+10 GiB disk, no GPU. The remote Dockerfile build completed its installed Linux
+engine smoke tests and its check that agent/cloud packages are absent.
+The reviewed build and successful creation receipt are under
+`.repoweave/daytona-engine-v1`. Engine revision:
+`64724fa58c228a90f6a7f93c5358126a3dbdad82f40fc8e2a50da8c9d573925e`.
+No source dataset was uploaded and no sandbox was launched. Select the existing
+snapshot when creating a sandbox; the remote build does not require filling the
+Create Snapshot form's Image field.
+
+## Live execution in the user-created sandbox
+
+Verified October 18, 2026 in `repoweave-test-v1`, sandbox ID
+`62722223-d28a-498c-b485-378c0ce4cd4c`, created by the user from the engine snapshot.
+The live test checked 2 CPUs, 4 GiB RAM, 10 GiB disk, and disabled automatic deletion
+before executing the preinstalled synthetic smoke test with a cleared environment.
+
+```bash
+env REPOWEAVE_LIVE_SANDBOX=repoweave-test-v1 .venv/bin/pytest -m live tests/live/test_daytona.py -q -s
+.venv/bin/ruff check tests/live/test_daytona.py
+git diff --check
+```
+
+Result: **1 live test passed in 4.89 seconds**; Ruff passed. The SDK emitted one
+`server_url` deprecation warning. Remote exit status was zero; engine revision
+matched; RPW, tar-zstd and tar-lzma reconstruction, completed-job replay, and a
+decoder-only directory passed. No repository data or credentials were uploaded.
+The test stopped and preserved the sandbox and confirmed its stopped state.
+The result is saved under
+`.repoweave/live-daytona/e59774fc53644445bb86bf48ece39c42/report.json`.
+
+This was an existing-sandbox execution check. It did not test automatic provisioning,
+upload/download of archive artifacts, a second clean decoder sandbox, or the complete
+optimization workflow. No broad local regression rerun was needed for this opt-in test.
+
 ## Remaining limits
 
-Linux behavior, real large-repository corpora, the full 1 GiB archive limit,
+Linux coverage beyond the image-build smoke tests, real large-repository corpora,
+the full 1 GiB archive limit,
 adversarial OS resource isolation, and cross-machine timings remain unvalidated.
 The scale gate covers only the two bounded synthetic workloads above. RSS is explicitly a
 process-lifetime peak, not per-operation incremental memory. Dataset lineage and whether
@@ -148,11 +209,13 @@ selection conservatively charges the first file the full embedded asset cost, so
 miss gains amortized over many small files. Graph extraction supports the documented
 static Python subset only. No graph/dictionary compression advantage is claimed.
 
-Steps 10 onward, cloud experiment execution, neural codecs, and the dashboard remain
-unimplemented and untested. Live Factory verification covers only synthetic reports
+Step 10 and cloud experiment execution are in progress and incomplete; neural codecs
+and the dashboard remain unimplemented. Live Factory verification covers only synthetic reports
 on this installed SDK/CLI and account; no actual optimization or compression gain
 was measured. The CLI policy is not OS isolation: use a trusted backend profile
 without custom lifecycle hooks. Factory can retain approved summaries in its own
-session history. Nothing was pushed, published, or provisioned. See
+session history. The engine snapshot is active; existing-sandbox execution and stopping
+are verified, while automatic provisioning, artifact transfer, a separate decoder sandbox,
+and complete cloud optimization remain unverified. See
 [graph behavior](repository-graph.md), [benchmarks](benchmarks.md), and
 [archive formats](archive-format.md) for the implemented contracts.

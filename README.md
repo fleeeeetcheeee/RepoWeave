@@ -16,6 +16,7 @@ Use fresh output names on repeat runs. No service credentials are required.
 - [Repository graph](docs/repository-graph.md)
 - [Benchmarks, training partitions, and dictionary policies](docs/benchmarks.md)
 - [Factory agents and the opt-in live test](docs/factory-agents.md)
+- [Daytona engine snapshot setup](docs/daytona-snapshot.md)
 - [Implementation verification](docs/implementation-status.md)
 
 Optimization/cloud workflows and the dashboard remain later steps. Compression improvements
