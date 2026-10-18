@@ -1,8 +1,8 @@
 # RepoWeave
 Group Repository for HackHarvard 2026
 
-Local implementation through DESIGN.md steps 7–8: lossless archives, static Python
-repository graphs, trained dictionaries, versioned policies, and measured benchmarks.
+Implementation through DESIGN.md step 9: lossless archives, static Python repository
+graphs, trained dictionaries, measured benchmarks, and bounded Factory proposals.
 
 ```bash
 uv sync --locked
@@ -15,7 +15,8 @@ Use fresh output names on repeat runs. No service credentials are required.
 - [Archive usage and supported scope](docs/archive-usage.md)
 - [Repository graph](docs/repository-graph.md)
 - [Benchmarks, training partitions, and dictionary policies](docs/benchmarks.md)
+- [Factory agents and the opt-in live test](docs/factory-agents.md)
 - [Implementation verification](docs/implementation-status.md)
 
-Agent/cloud workflows and the dashboard remain later steps. Compression improvements
+Optimization/cloud workflows and the dashboard remain later steps. Compression improvements
 are hypotheses; compare full archives and resource measurements before making claims.

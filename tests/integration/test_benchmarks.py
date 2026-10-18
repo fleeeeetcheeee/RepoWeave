@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from repoweave.agents.schemas import summarize_benchmark
 from repoweave.benchmarks.runner import _measure, benchmark
 from repoweave.benchmarks.splits import Splits
 from repoweave.benchmarks.worker import _tar_decode, _tar_encode
@@ -39,6 +40,10 @@ def test_real_benchmark_cli_without_credentials(tmp_path: Path) -> None:
     report = json.loads(output.read_text())
     assert report["original_bytes"] == 1900
     assert report["partition"] == "unpartitioned-exploratory"
+    evidence = summarize_benchmark(report)
+    assert evidence.snapshot_id == report["snapshot"]["snapshot_id"]
+    assert len(evidence.results) == len(report["results"]) == 4
+    assert "hello.py" not in evidence.model_dump_json()
     assert {r["name"] for r in report["results"]} == {"candidate", "rpw-zstd", "tar-zstd", "tar-lzma"}
     for measurement in report["results"]:
         assert measurement["status"] == "ok", measurement

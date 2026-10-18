@@ -89,6 +89,19 @@ wheels = [
 ]
 
 [[package]]
+name = "droid-sdk"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/2d/8d0a7ff41df37e233949e888ce39e3eb157d36e1da74b4e12ac0726f126c/droid_sdk-0.5.0.tar.gz", hash = "sha256:51c7d04f8893fb10f7c50e10c789c0173a41bab36bd6de12f7b395fd8e205f44", size = 219440, upload-time = "2026-09-24T17:54:44.319Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/8c/e061de6d511667aa22c0d87209f8357b26564953d7d544abad5c41dfe77d/droid_sdk-0.5.0-py3-none-any.whl", hash = "sha256:b8fd0635b6ddf423491d6c952960af9d99c733065f7f8f7277acb901d585868a", size = 144741, upload-time = "2026-09-24T17:54:42.669Z" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -435,6 +448,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-asyncio"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/7c/d36d04db312ecf4298932ef77e6e4a9e8ad017906e24e34f0b0c361a2473/pytest_asyncio-1.4.0.tar.gz", hash = "sha256:c6c0d2259945122819f171a32ecea2c349ead889ee28176caaf492143424be42", size = 58514, upload-time = "2026-05-26T09:56:04.083Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/03/e2/08a497ef684b88559c9cc5f4ad53a37e7b99e727094a86d6ea32536d5d3c/pytest_asyncio-1.4.0-py3-none-any.whl", hash = "sha256:933ca923a23075a87fb7070c0ec272a6848489824d887c85c812670932835aa1", size = 16930, upload-time = "2026-05-26T09:56:02.576Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.4"
 source = { registry = "https://pypi.org/simple" }
@@ -448,6 +474,7 @@ name = "repoweave"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "droid-sdk" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "zstandard" },
@@ -457,11 +484,13 @@ dependencies = [
 dev = [
     { name = "mypy" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "droid-sdk", specifier = ">=0.5.0" },
     { name = "pydantic", specifier = ">=2,<3" },
     { name = "python-dotenv", specifier = ">=1,<2" },
     { name = "zstandard", specifier = ">=0.23,<1" },
@@ -471,6 +500,7 @@ requires-dist = [
 dev = [
     { name = "mypy" },
     { name = "pytest", specifier = ">=8" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "ruff" },
 ]
 

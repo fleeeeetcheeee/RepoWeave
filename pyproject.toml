@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Repository-aware lossless compression and measured policy optimization"
 requires-python = ">=3.12"
 dependencies = [
+  "droid-sdk>=0.5.0",
   "pydantic>=2,<3",
   "python-dotenv>=1,<2",
   "zstandard>=0.23,<1",
@@ -17,7 +18,12 @@ dependencies = [
 repoweave = "repoweave.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff", "mypy"]
+dev = [
+    "pytest>=8",
+    "ruff",
+    "mypy",
+    "pytest-asyncio>=1.4.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/repoweave"]

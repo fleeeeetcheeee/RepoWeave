@@ -1,4 +1,4 @@
-# Steps 6–8.4 verification
+# Steps 6–9 verification
 
 Verified locally on macOS with Python 3.12.15 and the existing `uv.lock`.
 
@@ -86,6 +86,57 @@ in 32.24 seconds**, Ruff passed, mypy passed for **36 source files**, and
 `git diff --check` passed. `pyproject.toml`, `uv.lock`, and the committed baseline
 policy are unchanged.
 
+## Step 9 Factory agents
+
+Implemented `agents/schemas.py`, `factory.py`, packaged role prompts, and a
+deterministic comparison reporter. The integration projects benchmark results onto
+bounded numeric evidence and content IDs, rejects final holdout reports, validates
+diagnoses and proposals, and checks registered dictionary assets and training
+partitions before and after reasoning. It neither executes experiments nor modifies
+active policies. See [Factory usage](factory-agents.md).
+
+Verified October 17, 2026 on macOS arm64 / Python 3.12.15 with `droid-sdk==0.5.0`,
+`pytest-asyncio==1.4.0`, and Droid CLI **0.244.0**. These two dependencies were added
+to the lockfile without changing existing package versions.
+
+The initial live preflight failed closed before prompting: the installed CLI treated
+an empty restrictive allowlist as unrestricted. Prompt-free probes established that
+allowing only `Read` and explicitly disabling `Read` produces zero allowed tools.
+The implementation now uses that configuration, verifies the effective settings and
+tool list, and rejects inherited MCP servers. DESIGN.md documents the correction.
+
+Final verification:
+
+```bash
+uv run --locked pytest
+uv run --locked pytest -m live tests/live/test_factory.py --tb=short
+.venv/bin/ruff check src tests
+.venv/bin/mypy src/repoweave
+git diff --check
+uv build --wheel --out-dir /tmp/repoweave-step9-wheel
+```
+
+Results: **410 offline tests passed, 1 live test deselected in 35.50 seconds**;
+the explicitly selected **live test passed in 41.22 seconds**; Ruff passed;
+mypy passed for **40 source files**; whitespace checking and the wheel build passed.
+A fresh Python process outside the checkout loaded the wheel's packaged analyst
+prompt and restrictive session configuration. All three role prompts were present
+in the wheel and no `.env` file was included.
+
+The live test authenticated with the local configuration and made two real calls
+using invented measurements: an evidence-linked analyst diagnosis and bounded,
+validated Zstd proposals. Each session passed the zero-enabled-tools and zero-MCP
+checks before sending a prompt. No repository source or private data was sent.
+The key was used only by the configuration loader and SDK, never printed or added
+to command arguments. `.env` was not edited.
+
+The 41 new offline cases cover strict schemas, measurement projection, bounded
+candidate counts, evidence/parent IDs, dictionary registry/provenance checks,
+partial/missing/malformed outputs, tool-policy rejection, unexpected execution
+events, setup/transport failures, deadlines, cancellation, resource cleanup,
+secret-safe errors, and unchanged policies after failure. Existing benchmark CLI
+coverage now also validates conversion of a real report into sanitized evidence.
+
 ## Remaining limits
 
 Linux behavior, real large-repository corpora, the full 1 GiB archive limit,
@@ -97,7 +148,11 @@ selection conservatively charges the first file the full embedded asset cost, so
 miss gains amortized over many small files. Graph extraction supports the documented
 static Python subset only. No graph/dictionary compression advantage is claimed.
 
-Steps 9 onward, agent/cloud/live-service integrations, neural codecs, and the dashboard
-remain unimplemented and untested. Nothing was pushed, published, provisioned, or sent
-externally. See [graph behavior](repository-graph.md), [benchmarks](benchmarks.md), and
+Steps 10 onward, cloud experiment execution, neural codecs, and the dashboard remain
+unimplemented and untested. Live Factory verification covers only synthetic reports
+on this installed SDK/CLI and account; no actual optimization or compression gain
+was measured. The CLI policy is not OS isolation: use a trusted backend profile
+without custom lifecycle hooks. Factory can retain approved summaries in its own
+session history. Nothing was pushed, published, or provisioned. See
+[graph behavior](repository-graph.md), [benchmarks](benchmarks.md), and
 [archive formats](archive-format.md) for the implemented contracts.

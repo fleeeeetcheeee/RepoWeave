@@ -665,13 +665,19 @@ Before passing results onward, confirm evidence IDs belong to the supplied repor
 
 Use one helper taking the role prompt, sanitized JSON input, and output model. Have it open a session in an owned empty workspace, stream to completion, inspect the result, and return validated output. Use a restrictive tool allowlist, no inherited MCP servers, automatic rejection of permission requests, and disabled built-in skills. Verify the effective tool policy with the installed SDK; fail closed if it cannot be enforced. Configuration is separate from the optional CLI droid definitions.
 
-Start the summary-only reasoning session with this configuration; the empty restrictive allowlist is intentional. Include a test against the installed version that proves no tools are available, rather than assuming an empty set is interpreted identically across versions.
+Start the summary-only reasoning session with this configuration. Live policy checks
+against Droid 0.244.0 and droid-sdk 0.5.0 found that an empty restrictive allowlist
+leaves default tools enabled. Restrict to `Read` and explicitly disable `Read`, then
+verify the effective tool list has no allowed tools and no MCP servers before
+sending a prompt. Fail closed if either check fails; do not assume tool-selection
+semantics remain identical across versions.
 
 ```python
 from droid_sdk import Session, SessionConfig
 
 session_config = SessionConfig(
-    restrict_tools=set(),
+    restrict_tools={"Read"},
+    disabled_tools={"Read"},
     mcp_servers=[],
     disable_builtin_skills=True,
     auto_reject_permission_requests=True,
