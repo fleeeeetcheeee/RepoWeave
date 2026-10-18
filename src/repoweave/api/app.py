@@ -21,25 +21,31 @@ from repoweave.experiments.schemas import MAX_ARTIFACT_BYTES, Identity
 from repoweave.repository import create_snapshot
 from repoweave.repository_graph import build_graph
 from repoweave.runs import service
-from repoweave.runs.queue import TERMINAL, Queue
+from repoweave.runs.queue import TERMINAL, Queue, QueueFull
 from repoweave.storage.database import Store
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, public_origin: str | None = None,
+               max_pending: int | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         configured = settings or load_settings()
         app.state.settings = configured
-        app.state.queue = Queue(Store(configured.data_dir))
+        app.state.queue = Queue(Store(configured.data_dir), max_pending=max_pending)
         app.state.fixtures = {name: path.absolute() for name, path in configured.fixtures.items()}
         yield
 
     app = FastAPI(title="RepoWeave local API", lifespan=lifespan)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"],
-                       www_redirect=False)
+    if public_origin is None:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"],
+                           www_redirect=False)
 
     @app.middleware("http")
     async def local_only(request: Request, call_next):
+        if public_origin is not None:
+            if request.scope.get("repoweave.authenticated") is not True:
+                return JSONResponse({"detail": "Authentication required"}, status_code=401)
+            return await call_next(request)
         try:
             local = request.client is not None and ipaddress.ip_address(request.client.host).is_loopback
         except ValueError:
@@ -65,6 +71,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(OSError)
     async def unavailable(request, error):
         return JSONResponse({"detail": "Storage or worker unavailable"}, status_code=409)
+
+    @app.exception_handler(QueueFull)
+    async def full(request, error):
+        return JSONResponse({"detail": "Project pending-job limit reached"}, status_code=429)
 
     def queue() -> Queue:
         return app.state.queue
@@ -100,6 +110,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def submit(request: Submission,
                idempotency_key: Annotated[str, Header(min_length=1, max_length=128,
                                                      pattern=r"^[a-zA-Z0-9_.:-]+$")]):
+        if public_origin is not None and (
+                request.repeats > 3 or request.warmups > 1
+                or request.limits.encode_seconds > 300 or request.limits.decode_seconds > 300):
+            raise ValueError("Hosted experiment exceeds budget")
         queue().repository(request.repository_id)
         service.registered_bundles(
             queue().store.root / "dictionaries", request.policy, tuple(request.dictionary_ids),

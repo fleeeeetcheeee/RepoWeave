@@ -389,19 +389,87 @@ warning; all assertions passed.
 
 ## Remaining limits
 
-The dashboard and neural codecs remain later steps. Private repositories, the full
-1 GiB archive limit, adversarial OS resource isolation, and cross-machine performance
-remain unvalidated. Public cloud coverage now includes the two releases above, plus
+The dashboard and neural codecs remain later steps. Complete private repositories,
+the full 1 GiB archive limit, adversarial OS resource isolation, and cross-machine
+performance remain unvalidated. Bounded approved private CSV subsets were subsequently
+validated as recorded below. Public cloud coverage now includes the two releases above, plus
 owned dictionary and promotion fixtures, on this account/snapshot/SDK combination.
 RSS is a process-lifetime peak, not per-operation incremental memory. Abrupt worker
 process death can leave bounded local children finishing; see the API recovery contract.
-The API is local and single-user, without public hosting or multi-user authorization.
+The default API remains local and single-user. The optional authenticated project
+gateway was subsequently tested locally; a real public deployment remains untested.
 
 Dataset lineage and whether a human consulted a final test report cannot be inferred
-automatically. Dictionary selection charges the first file the full embedded asset
-cost, so it can miss gains amortized over many files. Graph extraction supports the
+automatically. Dictionary selection now amortizes shared assets and checks exact total bytes; it
+remains a conservative group filter rather than an exhaustive subset optimizer. Graph extraction supports the
 documented static Python subset only. Factory's tool restrictions are not OS isolation;
 use a trusted backend profile without custom lifecycle hooks. Factory may retain
 approved measurement summaries in session history. No general compression advantage
 is claimed. See [optimization](optimization.md), [graph behavior](repository-graph.md),
 [benchmarks](benchmarks.md), and [archive formats](archive-format.md).
+
+
+## Private datasets, hosted isolation, and compression follow-up (2026-10-18)
+
+See [compression research](compression-research.md) for exact inputs, archive sizes,
+training/evaluation separation, cloud snapshot versions, commands and durable receipts.
+See [hosting](hosting.md) for the recommended Fly.io/Auth0 setup and its remaining gates.
+
+- Two approved private CSV subset tests passed in Daytona: VIETA (23 files,
+  16,064,788 bytes) and Portfolio (28 files, 1,514,294 bytes). Exact independent
+  reconstruction succeeded and all four sandboxes were deleted. No private data went
+  to Factory, LangSmith or public hosting. The original folders were not modified.
+- The writer now compares dictionaries with plain zstd, amortizes asset costs across
+  files, and falls back unless the full delivered archive is strictly smaller.
+  Default plain archives and decoding formats remain compatible.
+- A live same-level dictionary/promotion test passed on generated data with the new
+  engine snapshot, independent decoding, exactly-once test promotion and two further
+  deleted sandboxes. A persistent versioned engine snapshot was created; only the
+  nonsecret snapshot-name setting in `.env` changed.
+- Three public dictionary sizes trained on SymPy did not improve Django at level 3.
+  A real Factory analyst/proposer then selected an 8 KiB dictionary at level 9;
+  its local repeated benchmark passed. Conclusions retain the whole-tree baselines
+  and distinguish level tuning from dictionary gains. The same-level Django dictionary
+  gain is 25,912 bytes (0.17%) over plain RPW-9; whole-tree tar-zstd-9 remains smaller.
+- Optional hosted mode verifies RS256 access tokens and configured project membership,
+  separates every project's store and fixtures, bounds bodies/requests/queued jobs,
+  and disables browser-authorized cloud transfers. The default localhost API stays
+  unchanged. PyJWT with crypto is now a direct dependency at its existing locked
+  resolution; no dependency package versions were upgraded.
+
+Validation actually run:
+
+```text
+.venv/bin/pytest -q --tb=short
+471 passed, 10 deselected in 64.14 seconds
+
+.venv/bin/pytest tests/integration/test_hosting.py tests/integration/test_dictionary_archive.py -q --tb=short
+15 passed in 1.95 seconds (after final project-path/case-collision checks)
+
+.venv/bin/pytest tests/integration/test_api.py tests/integration/test_training_workflow.py tests/integration/test_hosting.py -q --tb=short
+31 passed in 14.42 seconds
+
+.venv/bin/pytest tests/integration/test_hosting.py -q --tb=short
+6 passed in 3.33 seconds (includes the subsequently added real separate-worker test)
+
+Private live test file: 2 passed in 110.17 seconds
+Updated dictionary/promotion live test: 1 passed in 29.46 seconds
+Factory public research live test: 1 passed in 166.93 seconds
+
+.venv/bin/ruff check src tests scripts
+All checks passed
+
+.venv/bin/mypy src/repoweave
+Success: no issues found in 66 source files
+
+git diff --check
+Passed
+```
+
+JWT verification tests use real ephemeral RSA signatures and a local signing-key
+provider; no live Auth0 tenant, public TLS endpoint or Fly deployment was tested.
+The user requested a hosting recommendation instead of supplying an account/target.
+Actual public multi-user acceptance therefore remains pending its deployment and
+identity configuration. Private testing covers the stated subsets, not all financial
+files or complete private repositories. No final holdout or universal compression
+superiority is claimed.

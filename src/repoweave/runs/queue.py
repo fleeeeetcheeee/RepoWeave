@@ -10,9 +10,14 @@ from repoweave.storage.database import Store
 TERMINAL = {"completed", "promoted", "completed-without-improvement", "failed", "cancelled"}
 
 
+class QueueFull(ValueError):
+    """The configured project's bounded backlog is full."""
+
+
 class Queue:
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, *, max_pending: int | None = None):
         self.store = store
+        self.max_pending = max_pending
         with store.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS repositories (
@@ -53,6 +58,11 @@ class Queue:
                 if json.loads(row[0]) != request:
                     raise ValueError("Idempotency key belongs to another request")
                 return identity
+            if self.max_pending is not None:
+                pending = db.execute("SELECT COUNT(*) FROM submissions WHERE status IN "
+                                     "('queued','running','awaiting-approval','interrupted')").fetchone()[0]
+                if pending >= self.max_pending:
+                    raise QueueFull("Pending-job limit reached")
             db.execute("INSERT INTO submissions(id,request,status) VALUES (?,?,?)",
                        (identity, json.dumps(request), "queued"))
             self._event(db, identity, "queued")

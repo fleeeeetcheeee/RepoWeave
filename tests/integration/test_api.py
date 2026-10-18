@@ -296,7 +296,7 @@ async def test_registered_dictionary_assets_use_same_engine(setup_api, tmp_path,
     repository(validation, validation=True)
     splits = Splits(train=["training"], validation=["validation"], test=["holdout"])
     train = create_snapshot(training, tmp_path / "captures")
-    bundles = [train_dictionaries({"training": train}, splits, grouping=grouping, dictionary_size=256)
+    bundles = [train_dictionaries({"training": train}, splits, grouping=grouping, dictionary_size=2048)
                for grouping in ("graph", "extension")]
     for bundle in bundles:
         bundle.save(settings.data_dir / "dictionaries")

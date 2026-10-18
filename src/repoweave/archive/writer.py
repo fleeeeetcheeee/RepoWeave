@@ -4,7 +4,6 @@ import base64
 import hashlib
 import json
 import os
-import shutil
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -59,6 +58,29 @@ def _entry_bytes(entry: FileEntry) -> int:
     ).encode("utf-8"))
 
 
+def _layout(entries: list[FileEntry | DirectoryEntry], assets: dict[str, str]) -> Manifest:
+    offset = 0
+    positioned: list[FileEntry | DirectoryEntry] = []
+    for entry in entries:
+        if isinstance(entry, FileEntry):
+            positioned.append(entry.model_copy(update={"offset": offset}))
+            offset += entry.length
+        else:
+            positioned.append(entry)
+    return Manifest(entries=positioned, assets=assets)
+
+
+def _copy_payload(source, destination, entry: FileEntry) -> None:
+    source.seek(entry.offset)
+    remaining = entry.length
+    while remaining:
+        chunk = source.read(min(remaining, 1024 * 1024))
+        if not chunk:
+            raise ArchiveFormatError("Truncated payload spool")
+        destination.write(chunk)
+        remaining -= len(chunk)
+
+
 def write_archive(
     snapshot: Snapshot, output: Path, *, codec_id: str = "zstd",
     parameters: Mapping[str, int] | None = None,
@@ -78,6 +100,9 @@ def write_archive(
         with staging_directory(parent) as (_, staging), tempfile.TemporaryFile() as payloads:
             entries: list[FileEntry | DirectoryEntry] = []
             assets: dict[str, str] = {}
+            alternatives: dict[str, FileEntry] = {}
+            savings: dict[str, int] = {}
+            baseline_offset = 0
             for entry in original.entries:
                 if isinstance(entry, DirectoryEntry):
                     entries.append(entry)
@@ -87,41 +112,59 @@ def write_archive(
                     if os.fstat(source.fileno()).st_mode & 0o111 != entry.executable_bits:
                         raise ArchiveFormatError("Snapshot executable bits changed")
                 check_bytes(data, entry.size, entry.sha256)
-                dictionary = dictionaries.get(entry.path)
-                selected_codec = "zstd_dictionary" if dictionary is not None else codec_id
-                digest = hashlib.sha256(dictionary).hexdigest() if dictionary is not None else None
-                compressed = (get_codec(selected_codec).encode(
-                    data, parameters, {"dictionary": dictionary},
-                ) if dictionary is not None else codec.encode(data, parameters, {}))
-                stored = entry.model_copy(update={"offset": payloads.tell()})
+                compressed = codec.encode(data, parameters, {})
+                stored = entry.model_copy(update={"offset": baseline_offset})
                 candidate = stored.model_copy(update={
-                    "codec": selected_codec, "parameters": parameters, "length": len(compressed),
-                    "dictionary_id": digest,
+                    "codec": codec_id, "parameters": parameters, "length": len(compressed),
                 })
-                new_assets = dict(assets)
-                if digest is not None and dictionary is not None:
-                    new_assets[digest] = base64.b64encode(dictionary).decode("ascii")
-                # shortcut: charge first use fully; amortize groups if small-file benchmarks justify it.
-                asset_cost = len(json.dumps(new_assets, separators=(",", ":"))) - len(
-                    json.dumps(assets, separators=(",", ":")))
-                if new_assets and not assets:
-                    asset_cost += len(',"assets":{}')
-                if (len(compressed) + _entry_bytes(candidate) + asset_cost
+                if (len(compressed) + _entry_bytes(candidate)
                         < len(data) + _entry_bytes(stored)):
-                    assets = new_assets
-                    entries.append(candidate)
-                    payloads.write(compressed)
+                    selected, encoded_data = candidate, compressed
                 else:
-                    entries.append(stored)
-                    payloads.write(data)
-            manifest = Manifest(entries=entries, assets=assets)
+                    selected, encoded_data = stored, data
+                # Temporary offsets refer to the spool; final offsets are assigned by _layout.
+                entries.append(selected.model_copy(update={"offset": payloads.tell()}))
+                payloads.write(encoded_data)
+                baseline_offset += selected.length
+                dictionary = dictionaries.get(entry.path)
+                if dictionary is not None:
+                    digest = hashlib.sha256(dictionary).hexdigest()
+                    compressed = get_codec("zstd_dictionary").encode(
+                        data, parameters, {"dictionary": dictionary})
+                    candidate = selected.model_copy(update={
+                        "codec": "zstd_dictionary", "parameters": parameters,
+                        "length": len(compressed), "dictionary_id": digest,
+                    })
+                    saving = (selected.length + _entry_bytes(selected)
+                              - candidate.length - _entry_bytes(candidate))
+                    if saving > 0:
+                        alternatives[entry.path] = candidate.model_copy(
+                            update={"offset": payloads.tell()})
+                        payloads.write(compressed)
+                        savings[digest] = savings.get(digest, 0) + saving
+                        assets[digest] = base64.b64encode(dictionary).decode("ascii")
+            # Charge each shared asset once against group-wide savings over plain zstd/stored.
+            assets = {key: value for key, value in assets.items() if savings[key] > len(
+                json.dumps({key: value}, separators=(",", ":"))) + len(',"assets":{}')}
+            selected_entries = [alternatives[entry.path] if entry.path in alternatives
+                                and alternatives[entry.path].dictionary_id in assets else entry
+                                for entry in entries]
+            plain = _layout(entries, {})
+            manifest = _layout(selected_entries, assets)
+            try:
+                candidate_size: int | float = len(encode_manifest(manifest)) + manifest.payload_size
+            except ArchiveFormatError:
+                candidate_size = float("inf")  # Excessive asset metadata falls back to plain.
+            if candidate_size >= len(encode_manifest(plain)) + plain.payload_size:
+                manifest, selected_entries = plain, entries
             encoded = encode_manifest(manifest)
             fd = os.open("archive", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=staging)
             with os.fdopen(fd, "w+b") as archive:
-                archive.write(HEADER.pack(MAGIC, 2 if assets else VERSION, len(encoded)))
+                archive.write(HEADER.pack(MAGIC, 2 if manifest.assets else VERSION, len(encoded)))
                 archive.write(encoded)
-                payloads.seek(0)
-                shutil.copyfileobj(payloads, archive, length=1024 * 1024)
+                for entry in selected_entries:
+                    if isinstance(entry, FileEntry):
+                        _copy_payload(payloads, archive, entry)
                 archive.flush()
                 os.fsync(archive.fileno())
                 check_archive(archive)

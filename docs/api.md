@@ -17,7 +17,9 @@ events, checkpoints, and published artifacts live in `REPOWEAVE_DATA_DIR`.
 
 This is a local, single-user service. It rejects remote clients, unexpected Host
 headers, and cross-origin browser requests. Bind to loopback, without a public proxy.
-Authentication, multi-user ownership, and public hosting are outside Step 13.
+The default application remains local-only. The opt-in authenticated gateway and
+project worker are documented in [hosting](hosting.md); their local isolation tests
+do not constitute a verified public deployment.
 
 ## Register allowed fixtures
 

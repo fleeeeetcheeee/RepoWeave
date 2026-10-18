@@ -1,4 +1,5 @@
 import json
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -16,10 +17,11 @@ from repoweave.routing.schemas import Policy
 
 def repository(root: Path, *, validation: bool = False) -> None:
     root.mkdir()
+    shared = random.Random(7).randbytes(800).hex()
     for index in range(50):
         body = (f"import module{(index + 1) % 50:02d}\n"
                 f"def function_{index}(value):\n    return value + {index + validation}\n")
-        (root / f"module{index:02d}.py").write_text(body * (40 if validation else 8))
+        (root / f"module{index:02d}.py").write_text(body + f"COMMON = '{shared}'\n")
 
 
 def test_training_cli_pack_and_independent_unpack(tmp_path: Path) -> None:
@@ -31,7 +33,7 @@ def test_training_cli_pack_and_independent_unpack(tmp_path: Path) -> None:
     result = subprocess.run([
         sys.executable, "-m", "repoweave.cli", "train-dictionaries", "--splits", str(split_file),
         "--repository", f"training={tmp_path / 'training'}", "--grouping", "extension",
-        "--dictionary-size", "256",
+        "--dictionary-size", "2048",
     ], cwd=tmp_path, env={}, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
     assert "trained" in result.stdout
@@ -63,7 +65,7 @@ def test_real_graph_and_extension_control_on_same_snapshot(tmp_path: Path) -> No
     policies = {}
     for grouping in ("graph", "extension"):
         bundle = train_dictionaries({"training": training}, splits, grouping=grouping,
-                                    dictionary_size=256)
+                                    dictionary_size=2048)
         assert all(group.status == "trained" for group in bundle.groups.values())
         bundle.save(data_dir / "dictionaries")
         policies[grouping] = Policy(grouping=grouping, dictionary_id=bundle.dictionary_id)

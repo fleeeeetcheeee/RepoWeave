@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import random
 import tarfile
 import uuid
 from pathlib import Path, PurePosixPath
@@ -129,7 +130,7 @@ class DictionaryProposal:
     async def analyze(self, evidence, settings):
         ids = [evidence.results[0].result_id]
         return Diagnosis(summary="Owned dictionary transfer experiment", evidence_ids=ids,
-                         hypotheses=[Hypothesis(explanation="Measure trained dictionary vs stored",
+                         hypotheses=[Hypothesis(explanation="Measure trained dictionary vs plain zstd",
                                                 uncertainty="high", evidence_ids=ids)])
 
     async def propose(self, evidence, diagnosis, parent, settings, **kwargs):
@@ -145,21 +146,22 @@ async def test_live_dictionary_transfer_and_approved_promotion():
     output, settings = configuration("dictionary-promotion")
     receipt = {"status": "failed", "agent_boundary": "fixed proposal; real cloud engine and workflow"}
     try:
-        for label, copies, offset in (("training", 8, 0), ("validation", 40, 1)):
+        shared = random.Random(7).randbytes(800).hex()
+        for label, offset in (("training", 0), ("validation", 1)):
             root = output / label
             root.mkdir()
             for index in range(50):
                 body = (f"import module{(index + 1) % 50:02d}\n"
                         f"def function_{index}(value):\n    return value + {index + offset}\n")
-                (root / f"module{index:02d}.py").write_text(body * copies)
+                (root / f"module{index:02d}.py").write_text(body + f"COMMON = '{shared}'\n")
         splits = Splits(train=["training"], validation=["validation"], test=["untouched"])
         train = create_snapshot(output / "training", output / "captures")
         validation = create_snapshot(output / "validation", output / "captures")
-        bundle = train_dictionaries({"training": train}, splits, grouping="extension", dictionary_size=256)
+        bundle = train_dictionaries({"training": train}, splits, grouping="extension", dictionary_size=2048)
         assert all(g.status == "trained" for g in bundle.groups.values())
         bundle.save(settings.data_dir / "dictionaries")
         candidate = Policy(dictionary_id=bundle.dictionary_id, grouping="extension")
-        run_id = submit(output / "validation", Policy(codec="stored"), settings,
+        run_id = submit(output / "validation", Policy(), settings,
                         approved_snapshot=validation.snapshot_id, repeats=2, warmups=1,
                         dictionary_ids=(bundle.dictionary_id,), splits=splits, repository_id="validation",
                         limits=Limits(encode_seconds=30., decode_seconds=30.,
@@ -176,6 +178,8 @@ async def test_live_dictionary_transfer_and_approved_promotion():
         assert decision["eligible"] and decision["selected_bytes"] < decision["baseline_bytes"]
         assert decision["candidate_id"] == candidate.policy_id
         assert all(s["embedded_dictionary_bytes"] > 0 for s in report["results"][0]["samples"])
+        plain = next(row for row in report["results"] if row["name"] == "rpw-zstd")
+        assert report["results"][0]["score_bytes"] < plain["score_bytes"]
         jobs = {p: p.stat().st_mtime_ns for p in (store.root / "runs" / run_id / "jobs").glob("*/result.json")}
         # The user requested this promotion test; activation is isolated to this test's store.
         await approve(store, run_id)

@@ -186,9 +186,13 @@ No original input, trainer, registry, mutable policy, or external asset is neede
 the decoder. There are no file-to-file decode dependencies; the only added dependency
 is a content-hashed asset embedded in the same archive.
 
-The writer counts canonical per-file metadata plus the incremental serialized asset
-map when comparing a candidate against stored bytes. A dictionary is embedded once
-per content hash, and only if used. The first selected file pays the complete asset
-cost; later files reuse it. This conservative greedy choice can miss benefits that
-would appear only after amortizing a dictionary over several small files. Benchmarks
-count the actual entire archive, including header, manifest, base64, and payload.
+The writer first selects plain zstd or stored bytes per file. Dictionary alternatives
+must save payload plus entry metadata over that choice. Savings are accumulated by
+asset hash and pay the serialized asset cost once across all benefiting files.
+After assigning final offsets, the writer compares complete manifest and payload
+sizes against the plain archive and falls back to it unless strictly smaller.
+This preserves V1/V2 decoding and includes base64, offsets, metadata and header costs.
+The conservative group filter is not an exhaustive subset optimizer; it may miss
+marginal combinations but never emits a larger dictionary archive than its same-level
+plain control. Scratch payloads are spooled to disk, not retained for the whole tree
+in memory. Benchmarks include this additional encoding work and self-verification.

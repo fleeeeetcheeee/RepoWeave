@@ -268,11 +268,11 @@ def test_concurrent_destination_is_not_replaced(source: Path, tmp_path: Path, mo
 
 
 def test_partial_archive_write_is_never_published(source: Path, tmp_path: Path, monkeypatch) -> None:
-    def partial_write(source_stream, destination_stream, **kwargs):
+    def partial_write(source_stream, destination_stream, entry):
         destination_stream.write(source_stream.read(3))
         raise OSError("synthetic disk failure")
 
-    monkeypatch.setattr(writer.shutil, "copyfileobj", partial_write)
+    monkeypatch.setattr(writer, "_copy_payload", partial_write)
     with pytest.raises(OSError):
         pack(source, tmp_path / "failed.rpw", data_dir=tmp_path / "data")
     assert not (tmp_path / "failed.rpw").exists()
