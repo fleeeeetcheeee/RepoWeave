@@ -10,9 +10,9 @@ type Candidate = {policy: Partial<Policy>; rationale: string};
 export const beats = [
   {time: '0–8 s', title: 'Captured input', claim: 'This is the fixed input snapshot. Verification checks the supported files captured here.'},
   {time: '8–20 s', title: 'Proposal and measured result', claim: 'Factory proposed these settings. The compressor produced this actual archive size.'},
-  {time: '20–30 s', title: 'Remote experiment', claim: 'The workflow ran the experiment in a Daytona sandbox.'},
-  {time: '30–47 s', title: 'Independent decoder receipt', claim: 'A second, fresh sandbox received only the archive. It restored the contents, and the backend compared them with the original snapshot byte for byte.'},
-  {time: '47–55 s', title: 'Sandbox cleanup', claim: 'Both temporary environments were deleted after verification.'},
+  {time: '20–30 s', title: 'Remote experiment', claim: 'Persisted workflow events and execution location for this run.'},
+  {time: '30–47 s', title: 'Independent decoder receipt', claim: 'A matching receipt records independent reconstruction and a byte-for-byte comparison with the original snapshot.'},
+  {time: '47–55 s', title: 'Sandbox cleanup', claim: 'Persisted cleanup status for each temporary environment.'},
   {time: '55–60 s', title: 'Portable archive', claim: 'The result is a portable archive. Restoring it needs neither Factory nor a cloud account.'},
 ];
 
@@ -42,7 +42,7 @@ export function Demo({run, snapshot, workflow, visited, present, setPresent}: {
     return () => removeEventListener('keydown', onKey);
   }, [beat, go, present, setPresent]);
 
-  if (!run) return <Empty>Complete an optimization run to present it here. A Daytona run shows every beat.</Empty>;
+  if (!run || run.operation !== 'optimize') return <Empty>Complete an optimization run to present it here. A Daytona run shows every beat.</Empty>;
   const reports: Record<string, any> = run.reports || {};
   const decision = reports.decision;
   const candidates: Candidate[] = reports.proposals?.candidates || [];
@@ -113,8 +113,8 @@ export function Demo({run, snapshot, workflow, visited, present, setPresent}: {
 
     <Beat index={5} current={beat}>{archive ? <div className="artifact-list"><article><div><span className="file-icon">RPW</span><h3>Archive · {short(archive.id)}</h3>
       <p>{bytes(archive.size)}{snapshot?.total_bytes ? ` · ${percent(archive.size, snapshot.total_bytes)} of the original snapshot` : ''}</p>
-      <code className="hash">SHA-256 {archive.sha256}</code><p className="muted">Restore offline: <code>repoweave unpack {short(archive.id)}.rpw -o restored</code></p></div>
-      <a className="button primary" href={`${base}/artifacts/${archive.id}`} download={`${archive.id}.rpw`}>Download archive ↓</a></article></div> : missing('No archive is attached to this run.')}</Beat>
+      <code className="hash">SHA-256 {archive.sha256}</code><p className="muted">Restore offline: <code>repoweave unpack {archive.id} -o restored</code></p></div>
+      <a className="button primary" href={`${base}/artifacts/${archive.id}`} download={archive.id}>Download archive ↓</a></article></div> : missing('No archive is attached to this run.')}</Beat>
   </div>;
 }
 

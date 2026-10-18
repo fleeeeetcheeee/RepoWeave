@@ -15,7 +15,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : 'Re
 
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>(tabs.find(t => t.toLowerCase() === query.get('view')) || 'Repository');
+  const [tab, setTab] = useState<Tab>(tabs.find(t => t.toLowerCase() === query.get('view')) || (query.get('present') === '1' ? 'Demo' : 'Repository'));
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [repoId, setRepoId] = useState(query.get('repo') || '');
   const [runs, setRuns] = useState<Run[]>([]);
@@ -96,7 +96,8 @@ export default function App() {
         const latest = await api<Run>(`/runs/${runId}`, {signal: controller.signal});
         if (!alive) return;
         status = latest.status; setRun(latest);
-        setRuns(previous => [...previous.filter(r => r.id !== latest.id), latest]);
+        setRuns(previous => previous.some(r => r.id === latest.id)
+          ? previous.map(r => r.id === latest.id ? latest : r) : [...previous, latest]);
         if (latest.status === 'promoted') {
           const p = await api<PolicyView>(`/repositories/${latest.repository_id}/policy`, {signal: controller.signal});
           if (alive) setActivePolicy(p);

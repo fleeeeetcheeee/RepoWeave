@@ -23,3 +23,5 @@ main {min-width: 0;} .topbar {height: 74px; display: flex; align-items: center; 
 @media (max-width: 720px) {.demo-stepper {flex-wrap: wrap;} .demo-stepper>button {width: 100%;} .receipt-flow, .sandbox-cards {grid-template-columns: 1fr;} .receipt-flow li+li::before {display: none;} .presenting .beat {min-height: 0;}}
 @media (prefers-reduced-motion: reduce) {.beat {transition: none;}}
 .evidence-row .tag {white-space: normal; overflow-wrap: anywhere; max-width: 100%;}
+.demo .artifact-list code {overflow-wrap: anywhere;}
+.demo .proposal-list {grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));}

@@ -168,6 +168,13 @@ test('real engine: capture, benchmark, promote, old decode, cloud receipt and re
     await expect(page.getByText('✓ Deleted', {exact: true})).toHaveCount(2);
     await expect(page.getByText('Ran in a Daytona sandbox', {exact: true})).toBeVisible();
     await expect(page.getByRole('link', {name: 'Download archive'})).toHaveAttribute('href', new RegExp(`/artifacts/${cloud.artifacts.find((a: {kind: string}) => a.kind === 'archive').id}$`));
+    const demoDownloadPromise = page.waitForEvent('download');
+    await page.getByRole('link', {name: 'Download archive'}).click();
+    const demoDownload = await demoDownloadPromise;
+    const demoArchive = path.join(exports, demoDownload.suggestedFilename());
+    await demoDownload.saveAs(demoArchive);
+    await expect(page.locator('#beat-6')).toContainText(`repoweave unpack ${demoDownload.suggestedFilename()} -o restored`);
+    decode(demoArchive, 'demo-download-decoded');
     await page.getByRole('button', {name: 'Present ▸'}).click();
     await expect(page.locator('.sidebar')).toBeHidden();
     expect(new URL(page.url()).searchParams.get('present')).toBe('1');
@@ -181,6 +188,30 @@ test('real engine: capture, benchmark, promote, old decode, cloud receipt and re
     await page.setViewportSize({width: 390, height: 844});
     await screenshot('demo-mobile.png');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    // A presenter-only URL opens Demo, and local runs never claim cloud evidence.
+    await page.goto(`/?present=1&run=${receipt.local_optimization}`);
+    await expect(page.locator('.sidebar')).toBeHidden();
+    await expect(page.getByText('Ran on this computer', {exact: true})).toBeVisible();
+    await expect(page.locator('#beat-4')).toContainText('there is no fresh-sandbox decoder receipt');
+    await expect(page.locator('#beat-5')).toContainText('created no sandboxes');
+    await expect(page.getByText('✓ Deleted', {exact: true})).toHaveCount(0);
+    await page.keyboard.press('PageDown');
+    await expect(page.getByRole('button', {name: /Proposal and measured result/})).toHaveAttribute('aria-current', 'step');
+    await page.keyboard.press('PageUp');
+    await expect(page.getByRole('button', {name: /Captured input/})).toHaveAttribute('aria-current', 'step');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    // A receipt for another snapshot must never show the verification check mark.
+    await page.route(`**/runs/${cloud.id}`, async route => {
+      const altered = structuredClone(cloud);
+      altered.reports['independent-decode'].snapshot_id = 'different-snapshot';
+      altered.sandboxes = [{role: 'decoder', status: 'delete-failed'}];
+      await route.fulfill({json: altered, headers: {'access-control-allow-origin': 'http://127.0.0.1:5173'}});
+    });
+    await page.goto(`/?view=demo&run=${cloud.id}`);
+    await expect(page.getByText('Receipt names a different snapshot. Not verified.')).toBeVisible();
+    await expect(page.getByText('✓ Byte-for-byte match with the original snapshot')).toHaveCount(0);
+    await expect(page.locator('#beat-5')).toContainText('delete-failed');
+    await expect(page.getByText('✓ Deleted', {exact: true})).toHaveCount(0);
     expect(errors).toEqual([]);
     receipt.status = 'passed';
   } finally {
