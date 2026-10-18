@@ -1,14 +1,13 @@
 """Persist experiments before dispatch and reuse only revalidated completed jobs."""
 
 import asyncio
-from pathlib import Path
 
 from repoweave.archive.decode import unpack
 from repoweave.config import Settings
 from repoweave.dictionaries.train import load_bundle
 from repoweave.execution import local
-from repoweave.experiments.schemas import Request, Result, engine_id, environment, file_hash
-from repoweave.repository import create_snapshot
+from repoweave.experiments.schemas import Request, Result, engine_id, environment
+from repoweave.repository import Snapshot, create_snapshot
 from repoweave.routing.objective import Limits, score
 from repoweave.routing.policy import content_id
 from repoweave.routing.schemas import Policy
@@ -22,7 +21,7 @@ class Runner:
         self.root = store.root / "runs" / run_id
         self.source = self.root / "input.rpw"
         self.registry = self.root / "dictionaries"
-        self.snapshot = None
+        self.snapshot: Snapshot | None = None
 
     def check_cancelled(self) -> None:
         if self.store.run(self.run_id)["cancel"]:
@@ -103,19 +102,21 @@ class Runner:
                 if index >= self.spec["warmups"]:
                     samples.append(result.sample.model_dump())
                     jobs.append(result.job_id)
-            item = {"name": name, "method": method, "status": "ok", "samples": samples,
+            item: dict = {"name": name, "method": method, "status": "ok", "samples": samples,
                     "policy_id": selected.policy_id if method == "rpw" else None, "job_ids": jobs}
             item["score_bytes"] = score(item, limits)
             item["eligible"] = item["score_bytes"] is not None
             results.append(item)
         assert self.snapshot is not None
+        environment_id = self.store.phase(self.run_id, "environment")
+        assert environment_id is not None
         return {"schema_version": 1, "snapshot": self.snapshot.to_report(),
                 "original_bytes": sum(entry.size_bytes or 0 for entry in self.snapshot.entries),
                 "policy": policy.model_dump(), "policy_id": policy.policy_id,
                 "limits": limits.model_dump(), "partition": "validation", "final": False,
                 "repeats": self.spec["repeats"], "warmups": self.spec["warmups"], "results": results,
                 "control_policy": control.model_dump() if control else None,
-                "environment": self.store.read_artifact(self.store.phase(self.run_id, "environment")),
+                "environment": self.store.read_artifact(environment_id),
                 "measurement": "Sequential fresh child processes; warmups excluded; process-lifetime RSS"}
 
     async def independent_decode(self, report: dict) -> None:

@@ -1,0 +1,6 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "improve_compression": "./src/repoweave/workflows/improve_compression/graph.py:graph"
+  }
+}

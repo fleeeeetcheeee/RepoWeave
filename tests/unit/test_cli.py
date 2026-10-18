@@ -33,13 +33,13 @@ def test_cli_configuration_error_is_secret_safe(tmp_path: Path) -> None:
     assert "Traceback" not in result.stderr
 
 
-def test_unimplemented_command_is_rejected(tmp_path: Path) -> None:
+def test_optimize_requires_input_and_policy(tmp_path: Path) -> None:
     result = subprocess.run(
         [sys.executable, "-m", "repoweave.cli", "optimize"],
         cwd=tmp_path, env={}, capture_output=True, text=True, check=False,
     )
     assert result.returncode == 2
-    assert "invalid choice: 'optimize'" in result.stderr
+    assert "the following arguments are required: input, --policy" in result.stderr
 
 
 def test_analyze_captures_input_without_credentials(tmp_path: Path) -> None:
@@ -141,3 +141,24 @@ def test_report_created_during_capture_is_not_overwritten(
         cli._analyze(root, report, tmp_path / "data")
     assert report.read_bytes() == b"another writer's output"
     assert len(list((tmp_path / "data" / "snapshots").iterdir())) == 1
+
+
+def test_cancelled_optimization_exits_without_traceback(tmp_path, monkeypatch, capsys):
+    import asyncio
+
+    from repoweave import cli
+    from repoweave.config import Settings
+    from repoweave.runs import service
+
+    settings = Settings(REPOWEAVE_DATA_DIR=tmp_path / "state")
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(sys, "argv", ["repoweave", "runs", "resume", "a" * 64])
+
+    async def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(service, "execute", cancelled)
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 130
+    assert "Interrupted" in capsys.readouterr().err

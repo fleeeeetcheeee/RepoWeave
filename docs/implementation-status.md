@@ -197,6 +197,90 @@ This was an existing-sandbox execution check. It did not test automatic provisio
 upload/download of archive artifacts, a second clean decoder sandbox, or the complete
 optimization workflow. No broad local regression rerun was needed for this opt-in test.
 
+## Steps 10–12: optimization, LangSmith, and full cloud verification
+
+Implemented October 18, 2026 on the existing locked environment: LangGraph 1.2.16,
+LangSmith 0.14.11, and Daytona 0.225.0. LangSmith is now a direct dependency; no
+resolved package versions changed. The engine revision remains
+`64724fa58c228a90f6a7f93c5358126a3dbdad82f40fc8e2a50da8c9d573925e`, matching the existing
+`repoweave-engine-v1` snapshot. No new image build was needed.
+
+The backend now includes a reference-only checkpointed graph, immutable run/job
+receipts, one-worker locking, cancellation, bounded proposals, approval interrupts,
+CAS policy promotion, CLI run operations, verified cloud downloads, and a separate
+clean decoder. LangSmith spans explicitly cover workflow nodes and Factory calls;
+automatic state capture, runtime metadata, raw exceptions, source, and model prose
+are excluded. Tests inspect the real SDK's outgoing bodies and persisted checkpoint
+bytes for sentinel values. See [operation and recovery instructions](optimization.md).
+
+Local verification commands actually run:
+
+```bash
+.venv/bin/pytest -q --tb=short
+.venv/bin/pytest tests/unit/test_tracing.py tests/integration/test_optimization.py tests/unit/test_cli.py -q --tb=short
+.venv/bin/ruff check src tests
+.venv/bin/mypy src/repoweave
+git diff --check
+```
+
+The last full regression passed **442 tests**, with **3 live tests deselected**, in
+**47.30 seconds**. After the final trace-completion metadata/readback changes, the
+focused command passed **36 tests in 11.78 seconds**; Ruff and mypy passed for
+**59 source files**. The additional metadata-only live test was added after that
+full regression; it is also excluded by default. Tests cover real engine round trips,
+no gain, resource rejection, approval/restart/idempotency, stale promotion,
+cancellation, uncertain creation, completed-job recovery, command/export failure,
+corruption/size limits, cleanup retry and expiry, and trace/checkpoint redaction.
+
+The authorized live commands were:
+
+```bash
+env REPOWEAVE_LIVE_CLOUD=1 .venv/bin/pytest -m live tests/live/test_cloud_optimization.py -q -s --tb=short
+env REPOWEAVE_LIVE_CLOUD=1 REPOWEAVE_LIVE_CLOUD_RECHECK=f98be9d9a3d34ca38ac15d2b69f2364c .venv/bin/pytest -m live tests/live/test_cloud_optimization.py -q -s --tb=short
+env REPOWEAVE_LIVE_CLOUD=1 .venv/bin/pytest -m live tests/live/test_langsmith.py -q -s --tb=short
+```
+
+The completed cloud run is
+`d9f04c5201cbf2aebf6dbce751808d27466144bc28c074d83830a28371e87a94`.
+It used a generated owned **68,048-byte** fixture, real Factory analyst/proposer
+calls, one warmup plus two measured repetitions, and **12 distinct remote jobs**.
+Every exported artifact passed request identity, hash, size, and local reconstruction
+checks. Zstd level 9 produced **1,078 bytes**, equal to the level 3 RPW baseline, so
+the outcome was **completed-without-improvement** and no policy was promoted.
+The conventional tar-zstd/tar-lzma archives were **621/644 bytes** respectively;
+these synthetic results do not establish RPW superiority.
+
+The selected archive was uploaded alone into a second fresh sandbox. Its restored
+archive was downloaded and compared byte-for-byte, including inventory and
+executable bits, against the backend snapshot. Both sandboxes are confirmed deleted:
+experiment `3c6d770f-14f8-4a3a-be71-23541f409cd0`, decoder
+`bb5e61b9-cc83-4da8-b26f-0ad8d9d0d499`. They ran sequentially with 2 CPUs, 4 GiB RAM,
+10 GiB disk, blocked outbound networking, and ten-minute lifetime limits.
+
+Two earlier cloud attempts exposed the account's explicit-deletion failure and
+asynchronous auto-deletion behavior. Cleanup now confirms actual absence after
+stop/auto-delete instead of treating a stop response as deletion or propagating a
+completed deletion as a failure. Their experiment sandboxes were also reconciled
+and confirmed deleted. The first receipts remain preserved as failed attempts.
+
+The completed run's initial immediate trace readback saw missing end timestamps.
+A read-only recheck passed **1 test in 12.50 seconds**, confirming **9 completed
+LangSmith spans**, including the Factory boundaries, with the source sentinel absent.
+No sandboxes or model calls were repeated for that recheck. Live tests now retry
+not-yet-indexed and incomplete traces within 45 seconds. Completion updates also
+include the same start time, project, trace ID, and dotted order as creation.
+The final separate metadata-only tracing test passed **1 test in 4.54 seconds**.
+SDK deprecation warnings remain for Daytona's internal `server_url` fallback and
+LangSmith's supported legacy `read_run` method.
+
+Successful cloud receipt:
+`.repoweave/live-cloud/f98be9d9a3d34ca38ac15d2b69f2364c/recheck-a7111aad559b490ab3c6a691c24257e7.json`.
+Its sibling `state/` holds durable artifacts, jobs, and the returned decoder archive.
+Successful final tracing receipt:
+`.repoweave/live-tracing/55917cc98a5afca96abd24849d1fbca440a472db8c076b0ae7b1b93c1cd967ea.json`.
+The local `.env` was neither printed nor changed. No checkout or private dataset was
+uploaded, and no sandbox received backend credentials.
+
 ## Remaining limits
 
 Linux coverage beyond the image-build smoke tests, real large-repository corpora,
@@ -209,13 +293,12 @@ selection conservatively charges the first file the full embedded asset cost, so
 miss gains amortized over many small files. Graph extraction supports the documented
 static Python subset only. No graph/dictionary compression advantage is claimed.
 
-Step 10 and cloud experiment execution are in progress and incomplete; neural codecs
-and the dashboard remain unimplemented. Live Factory verification covers only synthetic reports
-on this installed SDK/CLI and account; no actual optimization or compression gain
-was measured. The CLI policy is not OS isolation: use a trusted backend profile
-without custom lifecycle hooks. Factory can retain approved summaries in its own
-session history. The engine snapshot is active; existing-sandbox execution and stopping
-are verified, while automatic provisioning, artifact transfer, a separate decoder sandbox,
-and complete cloud optimization remain unverified. See
+The API, dashboard, and neural codecs remain unimplemented. Live cloud verification
+covers only the generated small fixture and this account/snapshot/SDK combination.
+Large/private repositories, live dictionary bundle transfers, and live approved
+promotion were not tested in this phase; promotion was exercised offline. No general
+compression gain is claimed. Factory's tool restrictions are not OS isolation: use a
+trusted backend profile without custom lifecycle hooks. Factory may retain approved
+measurement summaries in its session history. See [optimization](optimization.md),
 [graph behavior](repository-graph.md), [benchmarks](benchmarks.md), and
 [archive formats](archive-format.md) for the implemented contracts.

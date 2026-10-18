@@ -173,7 +173,7 @@ class Store:
             raise ValueError("Unknown sandbox role")
         with self.connect() as db:
             db.execute("INSERT OR IGNORE INTO sandboxes VALUES (?,?,?,NULL,'planned')",
-                       (run_id, role, f"repoweave-{run_id}-{role}"))
+                       (run_id, role, f"repoweave-{run_id[:32]}-{role}"))
             for key, value in values.items():
                 if key not in ("sandbox_id", "status"):
                     raise ValueError("Unknown sandbox field")

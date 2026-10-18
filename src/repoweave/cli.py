@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import json
 import os
 import tempfile
@@ -84,6 +85,22 @@ def main() -> None:
     training.add_argument("--repository", action="append", required=True, metavar="ID=PATH")
     training.add_argument("--grouping", choices=("none", "extension", "graph"), default="none")
     training.add_argument("--dictionary-size", type=int, default=8192)
+    optimizing = commands.add_parser("optimize", help="Run bounded, measured policy optimization")
+    optimizing.add_argument("input", type=Path)
+    optimizing.add_argument("--policy", type=Path, required=True)
+    optimizing.add_argument("--execution", choices=("local", "daytona"))
+    optimizing.add_argument("--run-id")
+    optimizing.add_argument("--repeats", type=int, default=3)
+    optimizing.add_argument("--warmups", type=int, default=1)
+    optimizing.add_argument("--approve-snapshot", help="Exact snapshot ID authorized for remote staging")
+    optimizing.add_argument("--dictionary-id", action="append", default=[])
+    optimizing.add_argument("--splits", type=Path)
+    optimizing.add_argument("--repository-id")
+    runs = commands.add_parser("runs", help="Inspect and control persisted optimization runs")
+    operations = runs.add_subparsers(dest="operation", required=True)
+    operations.add_parser("list")
+    for operation in ("show", "approve", "resume", "cancel", "cleanup"):
+        operations.add_parser(operation).add_argument("run_id")
     arguments = parser.parse_args()
     try:
         if arguments.command == "unpack":
@@ -93,6 +110,46 @@ def main() -> None:
             print(f"Restored {len(manifest.entries)} entries to {arguments.output}")
             return
         settings = load_settings()
+        if arguments.command in ("optimize", "runs"):
+            from repoweave.runs import service
+            from repoweave.storage.database import Store
+
+            store = Store(settings.data_dir)
+            if arguments.command == "optimize":
+                from repoweave.benchmarks.splits import load_splits
+                from repoweave.routing.schemas import load_policy
+
+                if arguments.execution:
+                    settings = settings.model_copy(update={"execution": arguments.execution})
+                run_id = service.submit(
+                    arguments.input, load_policy(arguments.policy), settings,
+                    run_id=arguments.run_id, repeats=arguments.repeats, warmups=arguments.warmups,
+                    approved_snapshot=arguments.approve_snapshot,
+                    dictionary_ids=tuple(arguments.dictionary_id),
+                    splits=load_splits(arguments.splits) if arguments.splits else None,
+                    repository_id=arguments.repository_id,
+                )
+                print(f"Run: {run_id}", flush=True)
+                result = asyncio.run(service.execute(store, run_id, settings))
+                print(f"Status: {result['status']}")
+            elif arguments.operation == "list":
+                print(json.dumps(store.runs(), indent=2))
+            elif arguments.operation == "show":
+                row = store.run(arguments.run_id)
+                print(json.dumps({"id": row["id"], "status": row["status"],
+                                  "events": store.events(arguments.run_id)}, indent=2))
+            elif arguments.operation == "cancel":
+                store.cancel(arguments.run_id)
+            elif arguments.operation == "approve":
+                asyncio.run(service.approve(store, arguments.run_id))
+            elif arguments.operation == "resume":
+                row = asyncio.run(service.execute(store, arguments.run_id, settings))
+                print(f"Status: {row['status']}")
+            elif arguments.operation == "cleanup":
+                from repoweave.execution.daytona import Remote
+
+                asyncio.run(Remote(store, arguments.run_id, settings).close())
+            return
         if arguments.command == "analyze":
             _analyze(arguments.input, arguments.output, settings.data_dir)
         elif arguments.command == "pack":
@@ -188,8 +245,8 @@ def main() -> None:
     except OSError:
         parser.exit(2, f"{parser.prog}: Filesystem operation failed; check paths and permissions\n")
     except ValueError:
-        parser.exit(2, f"{parser.prog}: Invalid dataset, training, or benchmark request\n")
-    except KeyboardInterrupt:
+        parser.exit(2, f"{parser.prog}: Invalid request or operation failed; inspect run events for optimization errors\n")
+    except (KeyboardInterrupt, asyncio.CancelledError):
         parser.exit(130, f"{parser.prog}: Interrupted\n")
 
 

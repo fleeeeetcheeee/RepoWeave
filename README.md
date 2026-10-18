@@ -1,8 +1,9 @@
 # RepoWeave
 Group Repository for HackHarvard 2026
 
-Implementation through DESIGN.md step 9: lossless archives, static Python repository
-graphs, trained dictionaries, measured benchmarks, and bounded Factory proposals.
+Implementation through DESIGN.md steps 10–12: lossless archives, static Python repository
+graphs, trained dictionaries, measured optimization with Factory, optional LangSmith
+traces, and bounded Daytona experiments with a separate decoder sandbox.
 
 ```bash
 uv sync --locked
@@ -16,8 +17,9 @@ Use fresh output names on repeat runs. No service credentials are required.
 - [Repository graph](docs/repository-graph.md)
 - [Benchmarks, training partitions, and dictionary policies](docs/benchmarks.md)
 - [Factory agents and the opt-in live test](docs/factory-agents.md)
+- [Optimization, approvals, cloud execution, and tracing](docs/optimization.md)
 - [Daytona engine snapshot setup](docs/daytona-snapshot.md)
 - [Implementation verification](docs/implementation-status.md)
 
-Optimization/cloud workflows and the dashboard remain later steps. Compression improvements
+The API, dashboard, and neural codecs remain later steps. Compression improvements
 are hypotheses; compare full archives and resource measurements before making claims.
