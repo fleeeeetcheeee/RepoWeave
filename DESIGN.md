@@ -15,6 +15,7 @@ Commands assume macOS/Linux with zsh or bash. Run them from the repository root 
 | 1–3 | Initial files, Python package, local configuration | None |
 | 4 | Reusable instructions for your choice of coding CLI | That CLI's login, only if you use it |
 | 5–8 | Lossless archive, repository graph, honest benchmarks | None |
+| 8.4 | Local large-repository regression tests before agents | None |
 | 9–10 | Factory agents and recoverable LangGraph workflow | Factory authentication |
 | 11 | Optional LangSmith traces | LangSmith key |
 | 12 | Daytona experiment execution | Daytona key and snapshot |
@@ -550,6 +551,49 @@ uv run repoweave benchmark examples/demo_repository --policy policies/baseline.j
 Include warm-up policy, repeated timing samples, variance, and environment/package versions in the report. Graph grouping and dictionary benefits remain hypotheses.
 
 **Done when:** codec failures, missing assets, and incorrect reconstruction cannot appear as winning results. Tests prove stored dictionary/manifest overhead is counted and training/test partitions do not overlap.
+
+### 8.4 Validate larger repositories locally before adding agents
+
+Implement [the local scale-testing task](docs/tasks/06-local-scale-tests.md) in
+`tests/integration/test_large_repositories.py`. Use the existing pytest `tmp_path`
+fixtures and local CLI subprocesses with an empty environment. Generate deterministic
+owned data at test time; do not download repositories, inspect private datasets, or
+execute fixture source. These are ordinary integration tests, included in the normal
+suite without a live marker or a separate service.
+
+Cover two bounded workloads:
+
+- 2,114 files, including a 2,048-module Python import cycle, JSON, Unicode paths,
+  an executable file, an empty file, and an empty directory. Check graph completeness
+  and acyclic candidate context ordering beyond the usual Python recursion depth.
+- 128 MiB of binary input plus a small metadata file: one file at the supported 64 MiB
+  limit, another 56 MiB of repeated bytes, and 8 MiB of seeded incompressible bytes.
+
+Run analysis and the existing benchmark command on each workload. Compare candidate
+RPW, plain RPW zstd, tar-zstd, and tar-lzma on the same snapshot, with one discarded
+warmup and two measured repetitions. Require byte-for-byte reconstruction, matching
+inventory and executable bits, repeatable archive sizes, full RPW metadata accounting,
+and successful benchmark workspace cleanup. Use explicit per-phase limits of 300
+seconds and 1 GiB process peak RSS; the CLI test also has a 600-second overall timeout.
+RSS is an eligibility check, not OS-enforced memory isolation. Keep JSON analysis and
+benchmark reports in each test's pytest temporary directory under normal pytest retention.
+Allow roughly 2 GiB of temporary disk space per run, plus pytest's retained older runs.
+
+Run from the repository root, using the same locked environment as earlier steps:
+
+```bash
+uv run --locked pytest tests/integration/test_large_repositories.py
+uv run --locked pytest tests/unit tests/integration
+uv run --locked ruff check src tests
+uv run --locked mypy src/repoweave
+```
+
+**Done when:** both workloads pass locally and the existing suite remains green.
+Record the machine/platform, workload sizes, and results in
+`docs/implementation-status.md`. This validates bounded synthetic scale, not all real
+repositories, the full 1 GiB archive limit, or cross-platform performance. Group-level
+dictionary cost selection remains a separate follow-up; this gate does not claim to
+fix it or prove a compression advantage. Complete this gate before step 9.
 
 ## 9. Create the runtime Factory agents
 

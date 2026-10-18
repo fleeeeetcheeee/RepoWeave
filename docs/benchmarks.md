@@ -3,6 +3,15 @@
 Steps 7–8 run locally with the locked engine dependencies and no service credentials.
 Only use owned or explicitly approved repositories. Input source is never executed.
 
+The local scale gate in [DESIGN step 8.4](../DESIGN.md#84-validate-larger-repositories-locally-before-adding-agents)
+runs with `uv run --locked pytest tests/integration/test_large_repositories.py` and is
+also included in the ordinary unit/integration suite. It generates 2,114-file and
+128 MiB synthetic workloads in pytest temporary directories, with no downloads or
+credentials. Each test leaves `analysis.json` and `benchmark.json` there under pytest's
+normal retention policy; intermediate benchmark workspaces are removed. Allow roughly
+2 GiB of temporary disk space per run, plus retained older runs. These are bounded
+correctness/resource regressions, not real-corpus compression research.
+
 ## Baseline measurements
 
 ```bash
