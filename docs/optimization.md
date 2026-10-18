@@ -103,3 +103,23 @@ is eventually consistent; both live checks retry missing/incomplete spans for up
 45 seconds. To recheck an already completed generated cloud run without provisioning
 or model calls, also set `REPOWEAVE_LIVE_CLOUD_RECHECK` to its 32-character receipt
 folder name. Rechecks write a new receipt and preserve the original outcome.
+
+## Extended live coverage
+
+`tests/live/test_extended_cloud.py` covers two larger pinned public releases and an
+owned dictionary-transfer/promotion workflow. Download only the exact public archives
+listed in that test to `/tmp/repoweave-django-5.1.4.tar.gz` and
+`/tmp/repoweave-sympy-1.13.3.tar.gz`; their SHA-256 values are checked before extraction.
+`REPOWEAVE_PUBLIC_ARCHIVES` can select another archive directory. Never substitute
+private data. The tests do not execute downloaded source.
+
+```bash
+env REPOWEAVE_LIVE_EXTENDED=1 uv run --locked pytest -m live tests/live/test_extended_cloud.py -q -s
+```
+
+This explicitly opts into three cloud runs, each with an experiment sandbox and a
+separate decoder. The dictionary run uses a fixed proposer, real measurements, and an
+explicit approval in an isolated test store. It cannot activate a policy in your normal
+store. It checks actual embedded dictionary bytes, exact reconstruction, promotion once,
+repeated resume without new jobs, and confirmed deletion. It does not claim dictionary
+compression is better than plain zstd. See the retained [verification results](implementation-status.md).

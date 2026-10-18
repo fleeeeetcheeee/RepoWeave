@@ -10,11 +10,13 @@ requires-python = ">=3.12"
 dependencies = [
   "daytona>=0.225.0",
   "droid-sdk>=0.5.0",
+  "fastapi>=0.143.3",
   "langgraph>=1.2.16",
   "langgraph-checkpoint-sqlite>=3.1.2",
   "langsmith>=0.14.11",
   "pydantic>=2,<3",
   "python-dotenv>=1,<2",
+  "uvicorn[standard]>=0.54.0",
   "zstandard>=0.23,<1",
 ]
 
@@ -28,6 +30,7 @@ dev = [
     "mypy",
     "pytest-asyncio>=1.4.0",
     "langgraph-cli[inmem]>=0.4.36",
+    "httpx>=0.28.1",
 ]
 
 [tool.hatch.build.targets.wheel]

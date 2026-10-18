@@ -1,5 +1,6 @@
 """Load settings at application entrypoints; check integrations only when used."""
 
+import json
 import os
 from pathlib import Path
 from typing import Literal
@@ -38,6 +39,15 @@ class Settings(BaseModel):
     daytona_snapshot: str | None = Field(default=None, alias="REPOWEAVE_DAYTONA_SNAPSHOT")
     host: str = Field(default="127.0.0.1", alias="REPOWEAVE_HOST", min_length=1)
     port: int = Field(default=8000, ge=1, le=65535, alias="REPOWEAVE_PORT")
+    fixtures: dict[str, Path] = Field(
+        default_factory=lambda: {"demo": Path("examples/demo_repository")},
+        alias="REPOWEAVE_FIXTURES",
+    )
+
+    @field_validator("fixtures", mode="before")
+    @classmethod
+    def parse_fixtures(cls, value: object) -> object:
+        return json.loads(value) if isinstance(value, str) else value
 
     @field_validator(
         "factory_api_key", "factory_model", "langsmith_api_key", "langsmith_endpoint",

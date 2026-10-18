@@ -15,7 +15,7 @@ from repoweave.agents import factory
 from repoweave.archive.writer import write_archive
 from repoweave.benchmarks.splits import Splits
 from repoweave.config import Settings
-from repoweave.dictionaries.train import load_bundle
+from repoweave.dictionaries.train import DictionaryBundle, load_bundle
 from repoweave.execution.daytona import Remote
 from repoweave.experiments.runner import Runner
 from repoweave.experiments.schemas import engine_id, environment, file_hash
@@ -27,6 +27,27 @@ from repoweave.routing.schemas import Policy
 from repoweave.storage.database import Store
 from repoweave.workflows.improve_compression.context import Context
 from repoweave.workflows.improve_compression.graph import build_graph
+
+
+def registered_bundles(
+    registry: Path, parent: Policy, dictionary_ids: tuple[str, ...], snapshot_id: str,
+    splits: Splits | None, repository_id: str | None,
+) -> list[DictionaryBundle]:
+    if (splits is None) != (repository_id is None):
+        raise ValueError("Dataset partitions and repository ID must be supplied together")
+    if splits is not None:
+        splits.require(repository_id or "", "validation")
+    bundles = []
+    for identity in sorted(set(dictionary_ids) | ({parent.dictionary_id} if parent.dictionary_id else set())):
+        bundle = load_bundle(registry, identity)
+        if (splits is None or bundle.splits != splits
+                or repository_id in bundle.training_snapshots
+                or snapshot_id in bundle.training_snapshots.values()):
+            raise ValueError("Dictionary training provenance overlaps validation")
+        if identity == parent.dictionary_id and bundle.grouping != parent.grouping:
+            raise ValueError("Policy and dictionary grouping differ")
+        bundles.append(bundle)
+    return bundles
 
 
 def submit(
@@ -42,9 +63,12 @@ def submit(
     if not re.fullmatch(r"[0-9a-f]{64}", run_id):
         raise ValueError("Run ID must be a content identity")
     store = Store(settings.data_dir)
-    snapshot = create_snapshot(source, store.root / "snapshots", exclude_paths=(store.root,))
-    if splits is not None:
-        splits.require(repository_id or "", "validation")
+    # API registrations are already captured below the store. Exclude the store
+    # only when it is inside the source, so registered snapshots remain usable.
+    exclusions = (store.root,) if store.root.is_relative_to(source.resolve()) else ()
+    snapshot = create_snapshot(source, store.root / "snapshots", exclude_paths=exclusions)
+    bundles = registered_bundles(settings.data_dir / "dictionaries", parent, dictionary_ids,
+                                 snapshot.snapshot_id, splits, repository_id)
     if settings.execution == "daytona":
         settings.validate_daytona(dataset_id=snapshot.snapshot_id,
                                   approved_dataset_ids=[approved_snapshot] if approved_snapshot else [])
@@ -55,13 +79,8 @@ def submit(
         source_archive = root / "input.rpw"
         if not source_archive.exists():
             write_archive(snapshot, source_archive, codec_id="stored")
-        registered = sorted(set(dictionary_ids) | ({parent.dictionary_id} if parent.dictionary_id else set()))
-        for identity in registered:
-            bundle = load_bundle(settings.data_dir / "dictionaries", identity)
-            if (splits is None or bundle.splits != splits
-                    or repository_id in bundle.training_snapshots
-                    or snapshot.snapshot_id in bundle.training_snapshots.values()):
-                raise ValueError("Dictionary training provenance overlaps validation")
+        registered = [bundle.dictionary_id for bundle in bundles]
+        for bundle in bundles:
             bundle.save(root / "dictionaries")
         spec = {
             "snapshot_id": snapshot.snapshot_id, "input_sha256": file_hash(source_archive),
@@ -123,7 +142,7 @@ async def execute(store: Store, run_id: str, settings: Settings, *, agents=facto
                             await asyncio.gather(task, return_exceptions=True)
                         span["outcome"] = store.run(run_id)["status"]
         except asyncio.CancelledError:
-            store.status(run_id, "cancelled")
+            store.status(run_id, "cancelled" if store.run(run_id)["cancel"] else "interrupted")
             raise
         except Exception:  # noqa: BLE001 - never persist exception payloads
             store.status(run_id, "failed")

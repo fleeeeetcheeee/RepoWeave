@@ -281,24 +281,127 @@ Successful final tracing receipt:
 The local `.env` was neither printed nor changed. No checkout or private dataset was
 uploaded, and no sandbox received backend credentials.
 
+## Step 13 and extended cloud verification
+
+Completed October 18, 2026. Added FastAPI 0.143.3 and direct locked dependencies
+for Uvicorn 0.54.0 / HTTPX 0.28.1; existing resolved package versions were retained.
+The deterministic engine revision remains unchanged:
+`64724fa58c228a90f6a7f93c5358126a3dbdad82f40fc8e2a50da8c9d573925e`.
+
+The localhost API now registers operator-configured fixture aliases, captures immutable
+snapshots, persists idempotent pack/benchmark/optimize submissions, exposes actual
+repository/workflow graphs, replays SSE progress, and supports approval, resume,
+cancellation, metrics and authorized artifact downloads. A separate worker claims jobs
+under an exclusive lock, executes existing engine/workflow operations, and preserves
+state across API restarts. Dictionary requests reuse provenance validation, including
+the extension control for graph-grouped benchmarks. Invalid browser paths, cross-origin
+requests, symlinks, artifact tampering, and payload-bearing errors are rejected.
+See [API usage and recovery](api.md).
+
+Final verification commands and results:
+
+```text
+.venv/bin/pytest -q --tb=short
+465 passed, 7 live tests deselected in 56.32 seconds
+
+.venv/bin/pytest tests/integration/test_api.py tests/integration/test_optimization.py -q --tb=short
+45 passed in 23.02 seconds (23 API/worker cases and 22 optimization cases)
+
+.venv/bin/ruff check src tests
+All checks passed
+
+.venv/bin/mypy src/repoweave
+Success: no issues found in 64 source files
+
+git diff --check
+Passed
+```
+
+API coverage includes real pack/benchmark/optimization work, dictionary assets and
+controls, invalid paths and requests, concurrent duplicate submissions, sequenced SSE
+replay, queued and active subprocess cancellation, checkpoint interruption/resume,
+approval/CAS promotion, worker lock/recovery, a separate worker CLI process, artifact
+access/tampering/symlinks, browser origin/host restrictions, sanitized failures, and
+persistence across new API instances. The full suite includes the existing synthetic
+local scale gate. A separately deployed/public API and dashboard were not tested.
+
+The additional live command was:
+
+```bash
+env REPOWEAVE_LIVE_EXTENDED=1 .venv/bin/pytest -m live tests/live/test_extended_cloud.py -q -s --tb=short
+```
+
+**3 passed in 441.89 seconds.** The tests used the existing `repoweave-engine-v1`
+snapshot, at most two sequential sandboxes per test, each 2 CPU / 4 GiB / 10 GiB and
+a ten-minute lifetime. All **six** sandboxes were confirmed deleted. Downloads were
+bounded and validated; each clean decoder received only its archive. Returned bytes,
+inventory, and executable bits were checked locally. Public repository source was
+never executed. Tracing and Factory calls were disabled in these tests; the earlier
+real Factory/LangSmith checks remain recorded above.
+
+### Larger public repositories
+
+Pinned release downloads and their SHA-256 digests are in
+`tests/live/test_extended_cloud.py`; raw downloads were staged under `/tmp` and inspected
+as data. Tests cover supported regular files extracted from these releases, with the
+engine's declared exclusions recorded in each receipt. Both runs used one warmup and
+two measured repetitions per method, a 120-second limit for each encode/decode phase,
+and a 1 GiB peak RSS eligibility limit. All measured archives reconstructed exactly
+and had repeatable sizes.
+
+| Public release | Supported files | Original bytes | RPW zstd | tar-zstd | tar-lzma |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Django 5.1.4 | 6,774 | 43,106,319 | 15,968,155 | 9,469,815 | 6,803,120 |
+| SymPy 1.13.3 | 2,050 | 31,195,914 | 9,472,154 | 7,923,726 | 6,068,396 |
+
+Django excludes `.github/workflows/data` and `tests/gis_tests/data`; SymPy excludes
+`data` and `sympy/utilities/mathml/data`, under the existing documented inventory rules.
+These are working-tree benchmarks, not Git-history archives. Conventional tar codecs
+won these comparisons; no RPW size advantage is claimed.
+
+Successful durable receipts:
+
+- `.repoweave/live-extended/django-5.1.4-02af7d276e894f0a804ae275e96bc626/report.json`
+- `.repoweave/live-extended/sympy-1.13.3-72467db44bc24a50a21bdcf50eb5c227/report.json`
+
+### Live dictionary transfer and policy promotion
+
+The third test used distinct generated training and validation repositories, a registered
+256-byte extension dictionary, and a fixed proposer boundary to deterministically test
+the requested cloud asset and promotion paths. The workflow, measurements, artifact
+transfers, separate decoder, checkpoint restart, explicit approval, and CAS promotion
+were real. No private data or backend credentials entered a sandbox.
+
+The validation repository contained 50 files / 123,240 bytes. The stored parent archive
+was **133,622 bytes**; the dictionary candidate was **18,281 bytes**, including the
+256-byte embedded dictionary in each measured sample. The run paused at the real
+approval checkpoint, was explicitly approved in its isolated test store, and promoted
+exactly once. Repeated resume reused the existing jobs without new sandbox creation or
+measurement execution. Plain RPW zstd was smaller still (**14,696 bytes**); the test
+proves transfer/approval correctness, not a dictionary advantage over plain zstd.
+
+Receipt:
+`.repoweave/live-extended/dictionary-promotion-d2452619c0714ef98601e31dbcf6448b/report.json`.
+Run: `c38130dabda213411c1098f1296e9027fccb68e161c686cc90b57fdb64eff993`.
+The user's ordinary active policies were unaffected; all promotion state belongs to
+this isolated test store. The existing Daytona SDK emitted its `server_url` deprecation
+warning; all assertions passed.
+
 ## Remaining limits
 
-Linux coverage beyond the image-build smoke tests, real large-repository corpora,
-the full 1 GiB archive limit,
-adversarial OS resource isolation, and cross-machine timings remain unvalidated.
-The scale gate covers only the two bounded synthetic workloads above. RSS is explicitly a
-process-lifetime peak, not per-operation incremental memory. Dataset lineage and whether
-a human has consulted a final test report cannot be inferred automatically. Dictionary
-selection conservatively charges the first file the full embedded asset cost, so it can
-miss gains amortized over many small files. Graph extraction supports the documented
-static Python subset only. No graph/dictionary compression advantage is claimed.
+The dashboard and neural codecs remain later steps. Private repositories, the full
+1 GiB archive limit, adversarial OS resource isolation, and cross-machine performance
+remain unvalidated. Public cloud coverage now includes the two releases above, plus
+owned dictionary and promotion fixtures, on this account/snapshot/SDK combination.
+RSS is a process-lifetime peak, not per-operation incremental memory. Abrupt worker
+process death can leave bounded local children finishing; see the API recovery contract.
+The API is local and single-user, without public hosting or multi-user authorization.
 
-The API, dashboard, and neural codecs remain unimplemented. Live cloud verification
-covers only the generated small fixture and this account/snapshot/SDK combination.
-Large/private repositories, live dictionary bundle transfers, and live approved
-promotion were not tested in this phase; promotion was exercised offline. No general
-compression gain is claimed. Factory's tool restrictions are not OS isolation: use a
-trusted backend profile without custom lifecycle hooks. Factory may retain approved
-measurement summaries in its session history. See [optimization](optimization.md),
-[graph behavior](repository-graph.md), [benchmarks](benchmarks.md), and
-[archive formats](archive-format.md) for the implemented contracts.
+Dataset lineage and whether a human consulted a final test report cannot be inferred
+automatically. Dictionary selection charges the first file the full embedded asset
+cost, so it can miss gains amortized over many files. Graph extraction supports the
+documented static Python subset only. Factory's tool restrictions are not OS isolation;
+use a trusted backend profile without custom lifecycle hooks. Factory may retain
+approved measurement summaries in session history. No general compression advantage
+is claimed. See [optimization](optimization.md), [graph behavior](repository-graph.md),
+[benchmarks](benchmarks.md), and [archive formats](archive-format.md).
