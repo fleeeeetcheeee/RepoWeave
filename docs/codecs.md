@@ -50,3 +50,15 @@ The archive layer remains responsible for canonical metadata sizing, full-archiv
 limits, SHA-256 verification, safe paths, and publication. Corruption that still
 forms valid bytes, especially stored bytes, requires that archive hash check.
 Inventory and pack/unpack integration live in the repository and archive layers.
+
+RPW V3 solid blocks reuse the existing stored and zstd implementations on bounded
+concatenated file bytes. `solid` is an archive slice reference, not a new registry
+codec. Each block is independent, following [Zstd's frame independence](https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md).
+The archive layer validates slice coverage and checks each reconstructed file hash;
+codec limits apply unchanged to each decoded block.
+
+V4 also permits LZMA solid blocks using the same XZ implementation and 128 MiB
+decoder memory ceiling. Its metadata envelope uses stored or Zstd independently
+of the payload codec, bounded to 16 MiB decoded metadata. Binary compaction is a
+manifest representation, not a dynamically registered codec. No decoder assets
+or dependencies were added.

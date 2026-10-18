@@ -23,11 +23,63 @@ at a time. The complete temporary archive is decoded and hash-checked before pub
 Identical snapshots with the same policy produce identical archives in the same locked
 environment. Completed snapshots remain available after a failed pack.
 
-Unpacking reads the [bounded V1/V2 formats](archive-format.md), decodes each file with its
+Unpacking reads the [bounded V1–V4 formats](archive-format.md), decodes each file with its
 recorded codec and parameters, checks its size/hash, and restores its executable bits.
 It uses no application settings, service credentials, original repository, or active
 policy. Output files use `0o600 | executable_bits`; directories use `0o700`. Other
 permission bits and filesystem metadata are outside the declared scope.
+
+## Opt-in solid blocks
+
+The included `policies/solid-1m.json` opts into a 1 MiB block target:
+
+```json
+{"schema_version":1,"name":"solid-1m","codec":"zstd","zstd_level":3,"solid_block_bytes":1048576}
+```
+
+```bash
+uv run --locked repoweave pack examples/demo_repository --policy policies/solid-1m.json -o .repoweave/solid.rpw
+uv run --locked repoweave unpack .repoweave/solid.rpw -o .repoweave/solid-restored
+uv run --locked repoweave benchmark examples/demo_repository --policy policies/solid-1m.json --output .repoweave/solid-benchmark.json
+```
+
+The same optional field is accepted in API policies. The dashboard does not yet
+offer a block-size control. Files share a compression frame in sorted path order;
+the decoder retains one block at a time and verifies individual file hashes.
+Targets range from 1 byte to 64 MiB. Files larger than the target occupy a block
+alone, up to the existing 64 MiB file limit. Dictionary policies cannot use this
+option. Whole files are never split across blocks.
+
+The writer measures both solid and ordinary same-level per-file archives and keeps
+solid only when the complete archive is smaller. Tiny/incompressible inputs can
+therefore still produce V1. This adds encoding work and scratch disk use; it is
+not a speed optimization. V3 archives need an updated decoder. No existing cloud
+snapshot was updated by this feature.
+
+## Compressed metadata and solid LZMA
+
+`metadata_encoding` accepts `json` (legacy default), `compressed` (also try Zstd
+compression of canonical JSON), or `compact` (also try prefix-compressed paths,
+fixed-width binary records and binary SHA-256 hashes, with optional Zstd compression).
+The smallest permitted wire representation wins, including framing. Per-file
+hashes, paths and executable bits are retained; compact mode cannot use dictionaries.
+Choosing compact mode does not guarantee binary metadata if compressed JSON is smaller.
+
+Solid policies also accept `codec: "lzma"`, using the existing XZ preset 6 and
+decoder memory bounds. Payload LZMA and metadata Zstd are independent choices.
+The same-codec per-file fallback remains, and no existing default policy changes.
+V4 requires the updated reader; V1–V3 decoding remains supported.
+
+```bash
+uv run --locked repoweave pack owned-input --policy policies/solid-compact-8m.json -o .repoweave/compact.rpw
+uv run --locked repoweave pack owned-input --policy policies/solid-lzma-compact-8m.json -o .repoweave/compact-lzma.rpw
+uv run --locked python scripts/evaluate_archive_formats.py owned-input .repoweave/format-study
+```
+
+The two included policies use an 8 MiB uncompressed target. Files exceeding it use
+singleton blocks up to 64 MiB. LZMA generally warrants more encode time/memory;
+inspect the measured report rather than selecting solely on bytes. The dashboard
+does not yet expose these policy controls. CLI/API submissions support them.
 
 ## Verification scope
 

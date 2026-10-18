@@ -50,11 +50,13 @@ async def test_existing_daytona_engine_sandbox() -> None:
                 assert response.exit_code == 0, "Remote engine smoke command failed"
                 assert len(response.result) < 65536, "Unexpected remote output size"
                 result = json.loads(response.result)
-                assert set(result) == {"status", "engine_id", "methods", "independent_decode"}
+                assert set(result) == {"status", "engine_id", "methods", "independent_decode", "v4_formats"}
                 assert result["status"] == "ok"
                 assert result["engine_id"] == engine_id(), "Installed engine revision differs"
                 assert result["methods"] == ["rpw", "tar-zstd", "tar-lzma"]
                 assert result["independent_decode"] is True
+                assert result["v4_formats"] == ["solid-zstd-compressed", "solid-zstd-compact",
+                                                 "solid-lzma-compact"]
                 report.update({"status": "passed", "exit_code": 0, "engine": result})
             finally:
                 # Remote timeout is separate from the API timeout; stop is the final backstop.

@@ -63,7 +63,7 @@ def test_mixed_manifest_round_trip_and_unicode() -> None:
 
 @pytest.mark.parametrize("header", [
     b"", b"short", HEADER.pack(MAGIC, VERSION, 14) + b"x",
-    HEADER.pack(b"WRONG!!!", VERSION, 14), HEADER.pack(MAGIC, 3, 14),
+    HEADER.pack(b"WRONG!!!", VERSION, 14), HEADER.pack(MAGIC, 5, 14),
     HEADER.pack(MAGIC, VERSION, 0), HEADER.pack(MAGIC, VERSION, MAX_MANIFEST_BYTES + 1),
 ])
 def test_invalid_headers(header: bytes) -> None:

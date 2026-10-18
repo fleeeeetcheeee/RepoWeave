@@ -83,6 +83,7 @@ def test_image_smoke_roundtrip_and_replay() -> None:
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
     assert report["status"] == "ok" and report["independent_decode"] is True
+    assert report["v4_formats"] == ["solid-zstd-compressed", "solid-zstd-compact", "solid-lzma-compact"]
 
 
 @pytest.mark.asyncio

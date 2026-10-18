@@ -322,6 +322,14 @@ export interface components {
              * @enum {string}
              */
             grouping: "none" | "extension" | "graph";
+            /** Solid Block Bytes */
+            solid_block_bytes?: number | null;
+            /**
+             * Metadata Encoding
+             * @default json
+             * @enum {string}
+             */
+            metadata_encoding: "json" | "compressed" | "compact";
         };
         /** PolicyView */
         PolicyView: {

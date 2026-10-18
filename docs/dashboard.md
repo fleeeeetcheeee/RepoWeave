@@ -4,6 +4,8 @@ The React/Vite/TypeScript dashboard uses the persistent API and a separate worke
 It runs locally without Fly, Auth0, a domain, or public deployment. Packing and
 benchmarking need no service credentials. Optimization uses the backend's Factory
 Droid CLI; optional Daytona execution also needs the configured engine snapshot.
+Use `repoweave-engine-v4-20261018` for the current V4 engine; see
+[snapshot preparation and live checks](daytona-snapshot.md).
 Public authenticated hosting remains a separate, optional integration described in
 [hosting setup](hosting-setup.md). This dashboard currently targets the local API;
 it does not implement Auth0 login.
@@ -42,7 +44,13 @@ stay on the backend; Vite's only setting is the public API base URL.
    eligible verified candidate enables **Approve & promote**. New archives can use
    the promoted policy; existing archives keep their embedded decoder assets.
 5. Repeat optimization with **Daytona sandbox** and approve the snapshot transfer.
-   Inspect the independent decoder receipt and both sandbox deletion states.
+   For the V4 showcase, uncheck **Use active policy**, choose **LZMA**, **Compact**
+   metadata and an **8 MiB target** for shared compression blocks. Use a fresh
+   snapshot for this stage: once a snapshot has an active policy, optimization
+   must start from that policy. The browser test adds an owned empty file and
+   captures a new snapshot after its initial promotion demonstration. Inspect the
+   independent decoder receipt and both sandbox deletion states. The selected
+   result may differ if a measured candidate improves on that parent policy.
 6. Refresh: the URL restores the selected snapshot/run; the API reloads durable
    state and SSE replays persisted events. Interrupted runs can be resumed, active
    work cancelled, and report artifacts downloaded.
@@ -53,7 +61,8 @@ An improvement over that control demonstrates promotion, not superiority over zs
 Whole-tree tar-zstd results remain visible. A cloud run may honestly retain the
 active policy when no smaller eligible candidate exists.
 
-The dashboard submits ordinary stored/zstd/lzma policies. Dictionary training and
+The dashboard submits stored/Zstd/LZMA policies, with JSON, compressed JSON or compact
+metadata and optional 1 MiB/8 MiB shared compression blocks for Zstd/LZMA. Dictionary training and
 partition-aware submissions remain CLI/API operations. Inventory and graphs bound
 their displayed rows/nodes, with explicit counts; source content is not displayed.
 
@@ -92,7 +101,8 @@ Each invocation uses a fresh directory, stops its local servers, and writes
 The cloud executor exports and verifies artifacts before deleting either sandbox.
 
 The test covers eligible promotion, new-policy packing, decoding the old archive
-again after promotion, a cloud experiment with independent decoding, refresh
+again after promotion, downloads and exact decoding for all three V4 format/codec
+combinations, a cloud experiment starting from compact solid LZMA with independent decoding, refresh
 recovery, SSE reconnect after a real event sequence, and a 390-pixel layout.
 An additional local-only test simulates a lost response after the backend accepted
 a submission, checks the displayed error, and verifies retry creates no duplicate.

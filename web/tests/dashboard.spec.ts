@@ -100,6 +100,33 @@ test('real engine: capture, benchmark, promote, old decode, cloud receipt and re
     const file = packed.artifacts.find((a: {kind: string}) => a.kind === 'archive');
     writeFileSync(path.join(exports, 'promoted.rpw'), await (await request.get(`${api}/artifacts/${file.id}`)).body());
     decode(path.join(exports, 'promoted.rpw'), 'promoted-decoded');
+    // A new snapshot has no active policy; existing snapshots must optimize from their active parent.
+    writeFileSync(path.join(root, 'owned-fixture', 'v4-empty.txt'), '');
+    await page.getByRole('button', {name: 'Capture snapshot'}).click();
+    await expect(page.getByRole('heading', {name: 'Repository structure'})).toBeVisible();
+    await page.getByLabel('Use active policy').uncheck();
+    const formats = [];
+    let v4Snapshot = '';
+    for (const [codec, metadata] of [['zstd', 'compressed'], ['zstd', 'compact'], ['lzma', 'compact']]) {
+      await page.getByLabel('Codec', {exact: true}).selectOption(codec);
+      await page.getByLabel('Metadata', {exact: true}).selectOption(metadata);
+      await page.getByLabel('Shared compression blocks').selectOption('8388608');
+      await start('Create archive');
+      await waitFinished();
+      const v4 = await currentRun();
+      v4Snapshot = v4.repository_id;
+      expect(v4.policy).toMatchObject({codec, metadata_encoding: metadata, solid_block_bytes: 8388608});
+      const artifact = v4.artifacts.find((a: {kind: string}) => a.kind === 'archive');
+      const data = await (await request.get(`${api}/artifacts/${artifact.id}`)).body();
+      expect(data.readUInt16BE(8)).toBe(4);
+      expect(data[18]).toBe(metadata === 'compressed' ? 0 : 1);
+      const name = `v4-${codec}-${metadata}`;
+      const archive = path.join(exports, `${name}.rpw`);
+      writeFileSync(archive, data);
+      decode(archive, `${name}-decoded`);
+      formats.push({codec, metadata, run_id: v4.id, bytes: data.length});
+    }
+    receipt.v4_formats = formats;
     await page.getByText('Optimization settings', {exact: true}).click();
     await page.getByLabel('Experiment execution').selectOption('daytona');
     await expect(page.getByRole('button', {name: 'Start optimization'})).toBeDisabled();
@@ -107,7 +134,9 @@ test('real engine: capture, benchmark, promote, old decode, cloud receipt and re
     await start('Start optimization');
     await waitFinished();
     let cloud = await currentRun();
-    expect(cloud.reports['independent-decode'].snapshot_id).toBe(promoted.repository_id);
+    expect(cloud.policy).toMatchObject({codec: 'lzma', metadata_encoding: 'compact', solid_block_bytes: 8388608});
+    await expect(page.getByRole('heading', {name: 'Remote reconstruction showcase'})).toBeVisible();
+    expect(cloud.reports['independent-decode'].snapshot_id).toBe(v4Snapshot);
     expect(cloud.sandboxes).toEqual([{role: 'decoder', status: 'deleted'}, {role: 'experiment', status: 'deleted'}]);
     if (cloud.status === 'awaiting-approval') {
       await page.getByRole('button', {name: 'Approve & promote'}).click();

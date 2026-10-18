@@ -4,13 +4,13 @@ The snapshot build contains the deterministic engine and a fixed experiment entr
 It excludes configuration, API keys, agent/cloud dependencies, repositories, datasets,
 and the optimization runner. The engine source allowlist also defines its revision ID.
 Python is pinned by container digest; engine dependencies and wheel hashes come from
-`uv.lock`. Builds run as an unprivileged user and check RPW, tar-zstd, tar-lzma, replay,
+`uv.lock`. Builds run as an unprivileged user and check legacy RPW, V4 compressed/compact metadata with solid Zstd/LZMA, tar-zstd, tar-lzma, replay,
 and independent byte-for-byte decoding using a generated synthetic fixture.
 
 Prepare a new local build directory:
 
 ```bash
-uv run --locked python scripts/prepare_engine_image.py .repoweave/daytona-engine-v1
+uv run --locked python scripts/prepare_engine_image.py .repoweave/daytona-engine-v4-20261018-build
 ```
 
 Review `manifest.json` and the five files under `context/`. Only the wheel, requirements,
@@ -27,12 +27,12 @@ See [Daytona permissions](https://www.daytona.io/docs/api-keys).
 After authorizing that upload and resource allocation:
 
 ```bash
-uv run --locked python scripts/create_daytona_snapshot.py .repoweave/daytona-engine-v1
-uv run --locked python scripts/create_daytona_snapshot.py .repoweave/daytona-engine-v1 --status
+uv run --locked python scripts/create_daytona_snapshot.py .repoweave/daytona-engine-v4-20261018-build --name repoweave-engine-v4-20261018
+uv run --locked python scripts/create_daytona_snapshot.py .repoweave/daytona-engine-v4-20261018-build --name repoweave-engine-v4-20261018 --status
 ```
 
 This uses Daytona's remote Dockerfile builder, so local Docker and a separate registry
-are unnecessary. It creates `repoweave-engine-v1` in `us`, with 2 CPUs, 4 GiB RAM,
+are unnecessary. It creates `repoweave-engine-v4-20261018` in `us`, with 2 CPUs, 4 GiB RAM,
 10 GiB disk, no GPU, and `sleep infinity` as its entrypoint. It does not launch a
 sandbox. Creation waits up to ten minutes; a client timeout does not cancel the remote
 build. Check status before retrying. The script refuses an existing name and never
@@ -42,7 +42,7 @@ When status is `active`, select that name in Daytona's **Create Sandbox → Snap
 selector and set:
 
 ```dotenv
-REPOWEAVE_DAYTONA_SNAPSHOT=repoweave-engine-v1
+REPOWEAVE_DAYTONA_SNAPSHOT=repoweave-engine-v4-20261018
 ```
 
 The **Create Snapshot → Image** field is for an existing container-registry reference;
@@ -56,7 +56,7 @@ the complete optimization workflow or live sandbox lifecycle.
 
 ## Test an existing live sandbox
 
-Create a sandbox from `repoweave-engine-v1` with 2 CPUs, 4 GiB RAM, 10 GiB disk,
+Create a sandbox from `repoweave-engine-v4-20261018` with 2 CPUs, 4 GiB RAM, 10 GiB disk,
 and automatic deletion disabled. Then explicitly opt in using its name:
 
 ```bash
@@ -73,3 +73,28 @@ Ephemeral sandboxes are rejected because stopping would delete them.
 
 This tests an existing sandbox, not automatic provisioning, artifact transfer, or a
 second clean decoder sandbox. It is excluded from the default test suite.
+
+## V4 remote reconstruction showcase
+
+The current snapshot is `repoweave-engine-v4-20261018`; the older snapshot remains
+available. Its engine revision must match the backend. Rebuild with a new name
+whenever engine code or locked engine dependencies change. Existing runs remain
+bound to their original revision and must not be resumed against a different engine.
+
+The deterministic V4 acceptance test covers compressed JSON + solid Zstd, compact
+metadata + solid Zstd, and compact metadata + solid LZMA. Each case runs one discarded
+warmup and two measured repetitions, plus plain RPW/tar controls. It creates two
+sequential sandboxes: compression, then archive-only reconstruction. Downloaded
+restored bytes, paths, empty directories and executable bits are verified locally;
+both sandboxes must have confirmed deletion receipts. No Factory calls are required.
+The owned generated fixture includes repeated binary content and multiple 16 KiB
+solid blocks, Unicode, an empty file/directory and executable bits.
+
+```bash
+REPOWEAVE_LIVE_V4=1 REPOWEAVE_DAYTONA_SNAPSHOT=repoweave-engine-v4-20261018 \
+  .venv/bin/pytest -m live tests/integration/test_cloud_formats.py -q -s --tb=short
+```
+
+The default suite runs the same cases with mocked Daytona transport and the real
+engine. Live receipts, archives and restored files persist in `.repoweave/live-v4/`.
+See [implementation status](implementation-status.md) for the actual live results.

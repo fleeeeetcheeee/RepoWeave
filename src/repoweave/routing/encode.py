@@ -18,4 +18,5 @@ def encode_policy(snapshot: Snapshot, output: Path, policy: Policy, registry: Pa
             raise ArchiveFormatError("Policy and dictionary grouping differ")
         dictionaries, _ = bundle.for_snapshot(snapshot)
     return write_archive(snapshot, output, codec_id=policy.codec, parameters=policy.parameters,
-                         dictionaries=dictionaries)
+                         dictionaries=dictionaries, solid_block_bytes=policy.solid_block_bytes,
+                         metadata_encoding=policy.metadata_encoding)

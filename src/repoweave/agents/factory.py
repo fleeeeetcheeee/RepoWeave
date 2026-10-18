@@ -147,7 +147,13 @@ async def propose(
     proposals = await _call("proposer", {
         "evidence": evidence.model_dump(), "diagnosis": diagnosis.model_dump(),
         "parent_policy_id": parent.policy_id,
-        "allowed": {"codec": "zstd", "zstd_level": {"minimum": -7, "maximum": 22},
+        "allowed": {"codec": ["zstd", "lzma"], "zstd_level": {"minimum": -7, "maximum": 22},
+                    "metadata_encoding": ["json", "compressed", "compact"],
+                    "solid_block_bytes": {"minimum": 1, "maximum": 64 * 1024 * 1024,
+                                          "optional": True},
+                    "constraints": "Solid blocks require no dictionary/grouping; compact metadata "
+                                   "cannot embed dictionaries; dictionaries require Zstd. "
+                                   "LZMA uses the engine's fixed preset 6. Compare full archive bytes.",
                     "dictionaries": allowed, "without_dictionary_grouping": "none",
                     "max_candidates": maximum},
     }, Proposals, settings)

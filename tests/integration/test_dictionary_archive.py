@@ -38,6 +38,20 @@ def shared_fixture(tmp_path):
     return create_snapshot(root, tmp_path / "snapshots"), dictionary
 
 
+def test_compressed_json_metadata_keeps_dictionary_portable(tmp_path):
+    from repoweave.archive.decode import unpack
+    from repoweave.benchmarks.worker import _compare
+
+    captured, dictionary = shared_fixture(tmp_path)
+    archive = tmp_path / "compressed-dictionary.rpw"
+    manifest = write_archive(captured, archive, metadata_encoding="compressed",
+                             dictionaries={entry.path: dictionary for entry in captured.entries})
+    assert manifest.assets
+    assert HEADER.unpack(archive.read_bytes()[:HEADER.size])[1] == 4
+    assert unpack(archive, tmp_path / "restored") == manifest
+    _compare(captured, tmp_path / "restored")
+
+
 def test_portable_dictionary_archive_and_old_policy_independence(tmp_path: Path) -> None:
     captured, dictionary = shared_fixture(tmp_path)
     data = (captured.files_root / "file").read_bytes()

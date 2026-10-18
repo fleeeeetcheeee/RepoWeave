@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from repoweave.codecs.base import validate_options
+from repoweave.codecs.base import MAX_FILE_BYTES, validate_options
 from repoweave.codecs.registry import get_codec
 from repoweave.repository import Snapshot
 
@@ -19,14 +19,16 @@ from .integrity import check_bytes
 from .manifest import (
     HEADER,
     MAGIC,
-    VERSION,
     ArchiveFormatError,
+    Block,
     DirectoryEntry,
     FileEntry,
     Manifest,
     encode_manifest,
 )
+from .metadata import encode_metadata
 from .reader import check_archive
+from .solid import build_solid
 
 
 def _snapshot_manifest(snapshot: Snapshot) -> Manifest:
@@ -70,7 +72,7 @@ def _layout(entries: list[FileEntry | DirectoryEntry], assets: dict[str, str]) -
     return Manifest(entries=positioned, assets=assets)
 
 
-def _copy_payload(source, destination, entry: FileEntry) -> None:
+def _copy_payload(source, destination, entry: FileEntry | Block) -> None:
     source.seek(entry.offset)
     remaining = entry.length
     while remaining:
@@ -85,10 +87,21 @@ def write_archive(
     snapshot: Snapshot, output: Path, *, codec_id: str = "zstd",
     parameters: Mapping[str, int] | None = None,
     dictionaries: Mapping[str, bytes] | None = None,
+    solid_block_bytes: int | None = None,
+    metadata_encoding: str = "json",
 ) -> Manifest:
     parameters = {} if parameters is None else dict(parameters)
     validate_options(codec_id, parameters, {})
     codec = get_codec(codec_id)
+    if solid_block_bytes is not None and (
+        type(solid_block_bytes) is not int or not 1 <= solid_block_bytes <= MAX_FILE_BYTES
+        or codec_id not in ("zstd", "lzma") or dictionaries
+    ):
+        raise ArchiveFormatError("Solid blocks require bounded Zstd/LZMA without dictionaries")
+    if metadata_encoding not in ("json", "compressed", "compact"):
+        raise ArchiveFormatError("Unsupported metadata encoding")
+    if metadata_encoding == "compact" and dictionaries:
+        raise ArchiveFormatError("Compact metadata does not support dictionary assets")
     if dictionaries and codec_id != "zstd":
         raise ArchiveFormatError("Dictionaries require Zstd encoding")
     dictionaries = {} if dictionaries is None else dictionaries
@@ -152,19 +165,37 @@ def write_archive(
             plain = _layout(entries, {})
             manifest = _layout(selected_entries, assets)
             try:
-                candidate_size: int | float = len(encode_manifest(manifest)) + manifest.payload_size
+                candidate_size: int | float = (
+                    len(encode_metadata(manifest, metadata_encoding)[1]) + manifest.payload_size
+                )
             except ArchiveFormatError:
                 candidate_size = float("inf")  # Excessive asset metadata falls back to plain.
-            if candidate_size >= len(encode_manifest(plain)) + plain.payload_size:
+            plain_size = len(encode_metadata(plain, metadata_encoding)[1]) + plain.payload_size
+            if candidate_size >= plain_size:
                 manifest, selected_entries = plain, entries
-            encoded = encode_manifest(manifest)
+            selected_payloads: list[FileEntry | Block] = [
+                entry for entry in selected_entries if isinstance(entry, FileEntry)
+            ]
+            if solid_block_bytes is not None:
+                solid, block_payloads = build_solid(
+                    snapshot, original, parameters, solid_block_bytes, payloads, codec_id=codec_id,
+                )
+                try:
+                    solid_size: int | float = (
+                        len(encode_metadata(solid, metadata_encoding)[1]) + solid.payload_size
+                    )
+                except ArchiveFormatError:
+                    solid_size = float("inf")
+                if solid.blocks and solid_size < plain_size:
+                    manifest = solid
+                    selected_payloads = list(block_payloads)
+            version, encoded = encode_metadata(manifest, metadata_encoding)
             fd = os.open("archive", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=staging)
             with os.fdopen(fd, "w+b") as archive:
-                archive.write(HEADER.pack(MAGIC, 2 if manifest.assets else VERSION, len(encoded)))
+                archive.write(HEADER.pack(MAGIC, version, len(encoded)))
                 archive.write(encoded)
-                for entry in selected_entries:
-                    if isinstance(entry, FileEntry):
-                        _copy_payload(payloads, archive, entry)
+                for payload in selected_payloads:
+                    _copy_payload(payloads, archive, payload)
                 archive.flush()
                 os.fsync(archive.fileno())
                 check_archive(archive)

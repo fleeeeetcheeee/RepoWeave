@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "solid-compact-8m",
+  "codec": "zstd",
+  "zstd_level": 3,
+  "solid_block_bytes": 8388608,
+  "metadata_encoding": "compact"
+}

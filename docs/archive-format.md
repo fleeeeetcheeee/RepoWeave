@@ -1,11 +1,12 @@
-# RPW archive formats, versions 1 and 2
+# RPW archive formats, versions 1–4
 
 This is the integration contract for DESIGN.md step 6.2. Header and manifest
 validation are implemented in `repoweave.archive.manifest`; reader/writer and
 encode/decode modules implement payload verification and safe publication.
 A valid manifest alone does not verify an archive. See [local usage](archive-usage.md).
 The original V1 contract below is preserved. V2 adds embedded dictionaries as specified
-at the end of this document; writers continue producing V1 when no dictionary is used.
+below; default writers continue producing V1 when no dictionary is used. Opt-in solid
+policies may produce V3; metadata compression/compaction and LZMA blocks use V4.
 
 ## Envelope
 
@@ -161,7 +162,7 @@ inventory, codecs, manifest validation, extraction, and CLI round trips.
 
 V2 uses the same magic, 18-byte envelope, integer encoding, canonical JSON rules,
 payload offsets, filesystem scope, and resource limits. Its header version is `2`.
-Readers accept versions 1 and 2 and reject every other version. V1 manifests may not
+V2-era readers accept versions 1 and 2 and reject every other version. V1 manifests may not
 contain dictionary assets/references; older V1 readers reject a V2 header. Current
 writers still produce byte-compatible V1 archives when no dictionary is used.
 
@@ -196,3 +197,97 @@ The conservative group filter is not an exhaustive subset optimizer; it may miss
 marginal combinations but never emits a larger dictionary archive than its same-level
 plain control. Scratch payloads are spooled to disk, not retained for the whole tree
 in memory. Benchmarks include this additional encoding work and self-verification.
+
+## V3 bounded solid blocks
+
+V3 retains the envelope, canonical JSON, paths, per-file hashes/executable bits,
+aggregate limits, and atomic publication rules. Older readers reject its version.
+V3 requires a nonempty root `blocks` array (at most 100,000 blocks), forbids assets,
+and requires every file to use `codec: "solid"`, `parameters: {}`, and a zero-based
+`block_index`. Directories are unchanged. For these files only, `offset` is the
+decoded byte offset within the referenced block and `length` equals `size`.
+
+Each block has exactly `codec` (`stored` or `zstd`), `parameters` (existing codec
+options), `size` (decoded bytes, 0–64 MiB), `offset` (payload-relative encoded
+offset), and `length` (encoded bytes, 0–128 MiB). Stored length equals size.
+Blocks occupy contiguous payload ranges in array order starting at zero.
+The actual payload length must equal the sum of block lengths, not file lengths.
+Each Zstd block is one independent checksummed frame with no external dictionary.
+
+File entries remain path-sorted. Ignoring directories, block references start at
+zero, never go backwards, and advance by exactly one. Every block has at least one
+file. Within each block, file slices start at zero, are contiguous in file order,
+and exactly cover the declared decoded size. Empty files may share slice boundaries;
+an all-empty block is valid. Missing/unused blocks, gaps, overlaps, mixed legacy/solid
+files, dictionary references, and unreferenced decoded bytes are rejected before output.
+V1/V2 reject blocks and solid files; V3 without blocks is invalid.
+
+The encoder groups whole files in path order up to `solid_block_bytes` (1 byte–64 MiB).
+A file larger than this target occupies a block alone, bounded by the
+existing 64 MiB file limit; files are never split. A target is not a hard bound for
+these singleton files. Each block selects Zstd or stored using payload plus block
+metadata size. The entire V3 archive must be strictly smaller than the same-level
+V1 per-file archive, including all framing/metadata, or the writer emits V1 instead.
+Empty directory-only archives also use V1. No dictionaries or graph grouping are
+combined with solid policies in this version.
+
+Decoding holds only the current block and verifies each file slice's exact size
+and SHA-256. Existing codec window/output limits apply to each block. Extracting a
+file requires decoding its block; no random-access extraction API is added here.
+Per-file manifest metadata remains uncompressed. Encoding both candidates adds CPU
+and temporary disk work. V1/V2 output and policy identities remain unchanged when
+the optional policy field is absent. Existing remote snapshots need a new engine
+build before they can execute solid policies or decode V3.
+
+## V4 compressed/compact metadata and solid LZMA
+
+V4 retains the 18-byte envelope. Header manifest length is the **wire** metadata
+length, bounded to 16 MiB including a six-byte prefix `struct.Struct(">BBI")`:
+representation (0 canonical JSON, 1 compact binary), compression (0 stored, 1 Zstd),
+and decoded metadata length (1–16 MiB). The remainder is exactly that many stored
+bytes or one bounded independent Zstd frame. Truncation, trailing/concatenated
+frames, unknown codes, and decoded-size mismatch are invalid. JSON uses the existing
+canonical schema. Compact metadata expands to the same validated schema; expanded
+canonical JSON must also fit 16 MiB. All existing path/layout/output limits apply.
+The payload begins immediately after the wire metadata. Reports count the prefix
+and compressed bytes, not the expanded representation, as manifest bytes.
+
+V4 permits ordinary files or solid blocks and adds `lzma` block descriptors with
+existing `preset` options. Each LZMA block is one XZ stream, with the existing
+128 MiB decoder working-memory limit and 64 MiB decoded-block limit. V3 still
+rejects LZMA blocks. V1–V3 retain their original wire representations.
+
+Compact binary is big-endian with no padding. It has no assets. All counts/offsets
+below are unsigned unless specified. Block/file codecs are 0 stored, 1 Zstd, 2 LZMA.
+The signed one-byte option is -128 for absent parameters, otherwise the explicit
+Zstd level or LZMA preset; stored requires -128. This retains empty versus explicit
+parameter dictionaries. Every file retains its full 32-byte SHA-256 digest.
+
+1. Two uint32 counts: entries, blocks; each at most 100,000.
+2. Block records, `>BbIII`: codec, option, decoded size, payload offset, encoded length.
+3. Entries in existing sorted path order. Each starts with `>HH`: byte length of
+   the maximal common prefix with the previous entry's UTF-8 path, suffix byte
+   length; then the suffix bytes and one kind byte (0 directory, 1 ordinary file,
+   2 solid file). First prefix is zero. Reconstructed UTF-8 paths are at most 1,024
+   bytes and must pass existing portable path checks; prefixes may split a UTF-8
+   code point because validation occurs after reconstruction.
+4. Directories end there. Files add `>IB32s`: original size, executable bits, digest.
+   Ordinary files then add `>BbII`: codec, option, payload offset, encoded length.
+   Solid files add `>II`: block index, decoded block offset; length is implied by
+   size, codec is solid and parameters empty. All implied fields are reconstructed.
+
+There are no trailing bytes. Decode validates the expanded manifest and re-encodes
+the compact records to reject noncanonical alternatives (including shorter prefixes).
+Counts and path lengths are checked before loops/reads; no archive-selected imports,
+external assets, or object deserialization are used.
+
+Policy `metadata_encoding` is `json` (legacy default), `compressed`, or `compact`.
+Compressed mode compares compressed JSON with legacy metadata; compact mode also
+compares compact binary, stored or Zstd-compressed. The smallest permitted metadata
+representation wins, including framing. Compact mode cannot use dictionaries.
+LZMA blocks force V4 even in JSON mode; their metadata may be stored JSON.
+Solid policies now accept Zstd or LZMA, without dictionaries/grouping. Writers
+compare the solid candidate and same-codec per-file candidate using actual wire
+metadata size, selecting solid only for a strict full-archive saving. These are
+bounded candidates, not an exhaustive optimizer. Omitted/default policy fields
+retain old serialized policy IDs and output bytes. Old readers reject V4 safely.

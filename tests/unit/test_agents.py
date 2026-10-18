@@ -243,6 +243,9 @@ async def test_valid_proposals_and_budget(sdk, evidence, diagnosis, proposals):
     payload = json.loads(sdk.prompts[0].split("\n", 1)[1])
     assert payload["allowed"]["max_candidates"] == 3
     assert payload["allowed"]["dictionaries"] == {}
+    assert payload["allowed"]["codec"] == ["zstd", "lzma"]
+    assert payload["allowed"]["metadata_encoding"] == ["json", "compressed", "compact"]
+    assert payload["allowed"]["solid_block_bytes"]["maximum"] == 64 * 1024 * 1024
     assert payload["evidence"]["limits"] == evidence.limits.model_dump()
 
 
@@ -277,12 +280,23 @@ async def test_invalid_inputs_fail_before_call(sdk, evidence, diagnosis):
 
 
 @pytest.mark.parametrize("policy", [
-    {"codec": "lzma"}, {"zstd_level": 23}, {"zstd_level": "9"},
+    {"codec": "stored"}, {"zstd_level": 23}, {"zstd_level": "9"},
     {"dictionary_id": "../escape"}, {"grouping": "graph"}, {"command": "echo injected"},
 ])
 def test_candidate_policy_rejects_unsupported_values(policy):
     with pytest.raises(ValidationError):
         CandidatePolicy.model_validate(policy)
+
+
+@pytest.mark.parametrize("codec", ["zstd", "lzma"])
+def test_candidate_policy_supports_bounded_v4(codec):
+    policy = CandidatePolicy(codec=codec, solid_block_bytes=8 * 1024 * 1024,
+                             metadata_encoding="compact")
+    assert Policy.model_validate(policy.model_dump()).policy_id == policy.policy_id
+    with pytest.raises(ValidationError):
+        CandidatePolicy.model_validate({**policy.model_dump(), "solid_block_bytes": 67108865})
+    with pytest.raises(ValidationError):
+        CandidatePolicy.model_validate({**policy.model_dump(), "dictionary_id": "a" * 64})
 
 
 def test_bounded_strict_outputs(proposals, diagnosis):

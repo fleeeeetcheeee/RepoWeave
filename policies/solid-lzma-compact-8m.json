@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "name": "solid-lzma-compact-8m",
+  "codec": "lzma",
+  "solid_block_bytes": 8388608,
+  "metadata_encoding": "compact"
+}

@@ -1,5 +1,165 @@
 # Implementation verification
 
+## V4 Daytona snapshot and remote reconstruction showcase — October 18, 2026
+
+Updated the existing cloud demonstration for compressed/compact V4 metadata and
+solid Zstd/LZMA. The dashboard now exposes metadata encoding and 1 MiB/8 MiB shared
+compression blocks, and labels the remote compression → fresh decoder → exact-byte
+verification showcase. Bounded Factory proposals can select Zstd or LZMA and the
+supported metadata/block settings; dictionary constraints and legacy defaults remain.
+
+Created active snapshot **`repoweave-engine-v4-20261018`** (ID
+`17396eec-ed52-43cf-bf66-ad5896af0c7b`) in `us`, with 2 CPUs, 4 GiB RAM and 10 GiB disk.
+The local backend configuration now selects it. The older snapshot remains available.
+Engine revision: `c7ff81108006d3354b4dfb778013c65a5a6af96b28fac2595df4628702da95cb`.
+The reviewed five-file context is 63,615 bytes, under
+`.repoweave/daytona-engine-v4-20261018-build/`; its manifest records every file hash.
+It contains only the engine wheel, locked requirements, Dockerfile, smoke test and
+ignore rules. No credentials or datasets entered the image. No dependency upgrade.
+
+The image build passed legacy RPW/tar controls, replay, V4 solid Zstd with compressed
+and compact metadata, solid LZMA with compact metadata, and independent decoding.
+The default local tests run the same cloud lifecycle through mocked transport.
+
+**Live deterministic V4 checks: 3 passed.** Each case used an owned 131,133-byte
+synthetic fixture, 11 solid blocks (16 KiB target), one discarded warmup and two
+measured repetitions, plus plain RPW/tar controls. Each independent decoder received
+only the archive. Returned files were checked locally for exact bytes, paths, empty
+files/directories and executable bits. All six run-owned sandboxes have confirmed
+`deleted` receipts; each decoder used a different sandbox from its compressor.
+
+| Live case | Complete archive bytes | Receipt below `.repoweave/live-v4/` |
+| --- | ---: | --- |
+| Compressed JSON + solid Zstd | 47,283 | `zstd-compressed-2297468420624c47bde36e1b08758177/report.json` |
+| Compact metadata + solid Zstd | 46,924 | `zstd-compact-7de9beabfff34ccfb0caa0d777bd66d5/report.json` |
+| Compact metadata + solid LZMA | 48,309 | `lzma-compact-15253fea3b0e466c8f5eda15d10599d8/report.json` |
+
+These are format/lifecycle acceptance checks, not evidence that LZMA or RPW wins
+on all repositories. No repository dataset, private data or fixture source was
+executed; only the reviewed engine and owned generated inputs were uploaded.
+
+Verification actually run:
+
+```text
+.venv/bin/pytest -q --tb=short
+579 passed, 13 deselected in 83.33s
+
+.venv/bin/pytest -q tests/unit/test_agents.py tests/unit/test_engine_image.py --tb=short
+49 passed in 3.31s (after final caller assertions)
+
+.venv/bin/ruff check src tests scripts deploy/smoke_engine.py
+All checks passed
+
+.venv/bin/mypy src/repoweave scripts/prepare_engine_image.py scripts/create_daytona_snapshot.py deploy/smoke_engine.py
+Success: no issues found in 72 source files
+
+cd web && npm run generate:api
+cd web && npm run build
+Passed
+
+cd web && npm run test:e2e
+2 passed in 25.0s (mocked Factory/Daytona; real engine/API/worker)
+
+REPOWEAVE_LIVE_V4=1 REPOWEAVE_DAYTONA_SNAPSHOT=repoweave-engine-v4-20261018 .venv/bin/pytest -m live tests/integration/test_cloud_formats.py -q -s --tb=short
+3 passed, 3 deselected in 82.92s; existing SDK server_url deprecation warnings
+
+git diff --check
+Passed
+```
+
+Mocked browser receipt: `.repoweave/demos/e2e-1792309335076/browser-receipt.json`.
+It includes all three V4 archive downloads and decoding, prior-format decoding,
+promotion, new-snapshot cloud execution, cleanup, refresh, SSE recovery and mobile
+layout. The first browser attempt exposed the existing active-parent constraint;
+the corrected showcase captures a fresh owned snapshot before trying V4 policies.
+
+**Live browser showcase: passed**, with real Factory and Daytona boundaries:
+
+```text
+cd web && REPOWEAVE_LIVE_DEMO=1 npm run test:e2e
+1 passed, 1 skipped in 3.0 minutes (local-only failure injection skipped)
+```
+
+Receipt: `.repoweave/demos/live-1792309368440/browser-receipt.json`; downloadable
+archives, JSON reports and screenshots are under its `exports/`. Cloud run
+`cafab66875e47eb027800774bc27fab81f08a65da653dd6783bdfbbc69d1e570`
+used the new snapshot and matching engine revision. Its compact solid-LZMA parent
+was 1,187 bytes; a verified candidate was 1,119 bytes and was promoted only within
+this isolated demo store. All three explicitly selected V4 archive variants were
+downloaded and decoded, and the prior archive decoded again after promotion.
+The separate cloud decoder received only the selected archive; exact local
+comparison passed. Both live-browser sandboxes have confirmed `deleted` receipts,
+bringing this update's total to eight deleted run-owned sandboxes.
+
+Not rerun: the broader public/private repository cloud suites, LangSmith export,
+public hosting acceptance, maximum-size blocks or concurrency/load tests. The
+live checks use owned synthetic fixtures; they do not establish general compression
+superiority. The previous snapshot is retained and continues to incur any provider
+storage charges. An initial local build-cache permission failure left a partial
+`.repoweave/daytona-engine-v4-20261018/`; the reviewed/uploaded build is the separate
+`-build` directory listed above.
+
+## Compressed/compact metadata and solid LZMA — October 18, 2026
+
+Implemented RPW V4 bounded metadata compression and canonical binary compaction,
+plus LZMA solid blocks. All per-file SHA-256 hashes and supported metadata remain.
+V1–V3 compatibility, default policy identities and default archive output remain
+unchanged. Existing CLI/API/benchmark callers and generated frontend types are updated;
+no dependency, cloud snapshot, active policy or deployment was changed.
+
+Completed all four stages on the earlier source/generated fixtures and pinned
+Django 5.1.4, SymPy 1.13.3 and Zstd 1.5.7 public releases. Compact Zstd RPW beat
+matched tar-zstd by 0.3473%, 0.2996% and 0.2561% respectively on those public
+supported subsets, with roughly 2.2–2.5 times the encode time. The two smaller
+fixtures still lost. Solid LZMA reduced RPW bytes further, but tar-lzma remained
+smaller on all five inputs. All measured candidates/controls were eligible and
+reconstructed exact bytes. No final holdout or general superiority is claimed.
+
+See [the complete study](metadata-research.md) for all stage sizes, timing/RSS,
+public archive hashes, exclusions, reproduction commands, receipts and limitations.
+
+Final verification actually run:
+
+```text
+.venv/bin/pytest -q --tb=short
+574 passed, 10 deselected in 67.71s
+
+.venv/bin/ruff check src tests scripts
+All checks passed
+
+.venv/bin/mypy src/repoweave scripts/evaluate_archive_formats.py scripts/prepare_public_benchmarks.py scripts/evaluate_solid_blocks.py
+Success: no issues found in 72 source files
+
+cd web && npm run generate:api
+cd web && npm run build
+Passed: generated API types, strict TypeScript and production bundle
+
+git diff --check
+Passed
+```
+
+The final full suite includes the new public-staging and metadata edge-case checks.
+No browser E2E, live/cloud V4, cross-platform, maximum-block or 1 GiB acceptance
+run was performed. The public measurements cover the stated subsets, not an
+untouched repository-level holdout. The existing lockfile and baseline policy
+were unchanged.
+
+## Bounded solid blocks — October 18, 2026
+
+Implemented opt-in RPW V3 multi-file stored/Zstd blocks, strict block/slice bounds,
+per-file verification, same-level V1 fallback based on complete archive bytes, and
+unchanged legacy policy identities. The shared policy field is available through
+CLI/API/benchmark paths; frontend API types are regenerated. Existing V1/V2 archives
+remain readable. No dependencies, baseline policy, remote snapshot, or deployment
+were changed.
+
+The source-tree experiment reduced full archive bytes from 100,679 to 77,890
+(22.64%); a deliberately favorable generated fixture went from 1,104,120 to 64,513
+(94.16%). Whole-tree tar codecs remained smaller on both. All measured samples
+reconstructed exactly. The source benchmark was repeated without concurrent tests
+before recording timing. See [the detailed investigation](solid-blocks.md) for
+sizes, resource measurements, commands, receipts, test coverage, and limits.
+
 ## Step 14 — local dashboard and live demonstration (October 18, 2026)
 
 Implemented the React/Vite/TypeScript Repository, Archive, Benchmarks and

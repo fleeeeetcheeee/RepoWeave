@@ -85,6 +85,36 @@ def test_duplicate_and_conflicting_idempotency(setup_api):
     assert len(api.get("/runs").json()) == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metadata", ["json", "compressed", "compact"])
+async def test_solid_policy_survives_queue_and_archive_download(setup_api, tmp_path, metadata):
+    import random
+
+    from repoweave.archive.integrity import verify
+    from repoweave.archive.manifest import HEADER
+
+    settings, api, _, source = setup_api
+    shared = random.Random(41).randbytes(4096)
+    for index in range(16):
+        (source / f"shared-{index:02}.bin").write_bytes(shared)
+    registered = api.post("/repositories", json={"fixture": "owned"})
+    assert registered.status_code == 201
+    identity = submit(api, registered.json()["id"], policy={"solid_block_bytes": 65536,
+                                                          "metadata_encoding": metadata})
+    assert await run_once(settings)
+    result = api.get(f"/runs/{identity}").json()
+    assert result["status"] == "completed", result
+    assert result["policy"]["solid_block_bytes"] == 65536
+    artifact, = result["artifacts"]
+    response = api.get(f"/artifacts/{artifact['id']}")
+    assert response.status_code == 200
+    assert HEADER.unpack(response.content[:HEADER.size])[1] == (3 if metadata == "json" else 4)
+    archive = tmp_path / "solid.rpw"
+    archive.write_bytes(response.content)
+    unpack(archive, tmp_path / "restored")
+    verify(source, tmp_path / "restored")
+
+
 @pytest.mark.parametrize("body", [{"fixture": "/etc"}, {"fixture": "../outside"},
                                     {"path": "/etc"}, {"fixture": "unknown"}])
 def test_invalid_fixture_paths(setup_api, body):

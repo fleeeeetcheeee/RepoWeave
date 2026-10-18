@@ -72,7 +72,7 @@ async def create(build: Path, name: str, *, status_only: bool = False) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build", type=Path)
-    parser.add_argument("--name", default="repoweave-engine-v1")
+    parser.add_argument("--name", required=True, help="Unique versioned engine snapshot name")
     parser.add_argument("--status", action="store_true")
     args = parser.parse_args()
     try:

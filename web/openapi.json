@@ -730,6 +730,29 @@
             ],
             "title": "Grouping",
             "default": "none"
+          },
+          "solid_block_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 67108864.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solid Block Bytes"
+          },
+          "metadata_encoding": {
+            "type": "string",
+            "enum": [
+              "json",
+              "compressed",
+              "compact"
+            ],
+            "title": "Metadata Encoding",
+            "default": "json"
           }
         },
         "additionalProperties": false,

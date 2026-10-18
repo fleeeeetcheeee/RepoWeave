@@ -1,5 +1,10 @@
 # Measured compression follow-up (2026-10-18)
 
+Later local [solid-block](solid-blocks.md) and [metadata/LZMA](metadata-research.md)
+studies extend these results. The latter records small matched tar-zstd wins on
+three public releases, while tar-lzma remains smaller. Historical results below
+refer to the earlier per-file engine and have not been rewritten.
+
 This work tests full portable archive bytes and exact reconstruction. It does not
 claim that RepoWeave generally beats zstd or that neural model training occurred.
 Zstd dictionary training and Factory-guided policy selection are separate operations.

@@ -14,6 +14,40 @@ correctness/resource regressions, not real-corpus compression research.
 
 ## Baseline measurements
 
+For an opt-in solid-block investigation on owned local input, run:
+
+```bash
+uv run --locked python scripts/evaluate_solid_blocks.py owned-input .repoweave/solid-study
+```
+
+This captures one immutable snapshot, checks plain RPW and 64 KiB/1 MiB/8 MiB solid
+targets at zstd level 3, and independently reconstructs each candidate. It records
+full sizes, actual block counts and maximum decoded block sizes. The smallest
+candidate then receives one warmup and two fresh-process measured repetitions
+alongside plain RPW-3, tar-zstd-3 and tar-lzma. `report.json`, the snapshot, policy,
+and `selected.rpw` remain in the new output directory. These are exploratory
+development measurements, not final holdout evidence. The output must not exist.
+An archive with zero blocks used the plain fallback. Larger targets need not
+improve size, and this option makes no claim to beat whole-tree compression.
+
+To compare the metadata/codec follow-up stages, run
+`uv run --locked python scripts/evaluate_archive_formats.py owned-input .repoweave/format-study`.
+It captures one snapshot and measures, sequentially: solid Zstd with legacy JSON,
+compressed JSON, compact metadata, then solid LZMA with compact metadata. Targets
+default to 8 MiB (`--block-bytes` can change this). Every stage gets one warmup and
+two fresh-process samples, with plain RPW-3, tar-zstd-3 and tar-lzma-6 controls.
+Control measurements are repeated for each stage; each detailed stage report and
+verified candidate archive is retained. The summary records actual wire metadata,
+expanded metadata, payload bytes, block counts, timings and memory samples. Match
+Zstd candidates to tar-zstd and LZMA candidates to tar-lzma when attributing gains.
+These are exploratory measurements, not final holdout results.
+
+`scripts/prepare_public_benchmarks.py RELEASE ARCHIVE OUTPUT` stages the documented
+pinned Django, SymPy and Zstd release archives after exact SHA-256 verification.
+It performs no downloads, excludes links/special members, bounds extraction, retains
+provenance, and never executes source. Normal inventory exclusions still apply to
+the later snapshot and are recorded separately in benchmark reports.
+
 ```bash
 uv run --locked repoweave benchmark examples/demo_repository \
   --policy policies/baseline.json --output .repoweave/baseline-report.json

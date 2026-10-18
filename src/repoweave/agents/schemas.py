@@ -69,7 +69,7 @@ class Diagnosis(StrictModel):
 
 
 class CandidatePolicy(Policy):
-    codec: Literal["zstd"] = "zstd"
+    codec: Literal["zstd", "lzma"] = "zstd"
 
 
 class Candidate(StrictModel):

@@ -5,12 +5,13 @@ from pathlib import Path
 
 from .filesystem import open_directory, open_regular, publish, require_absent, staging_directory
 from .manifest import ArchiveFormatError, DirectoryEntry, Manifest
-from .reader import decode_file, read_manifest
+from .reader import SolidDecoder, decode_file, read_manifest
 
 
 def unpack(archive: Path, output: Path) -> Manifest:
     with open_regular(archive) as source:
         manifest = read_manifest(source)
+        solid = SolidDecoder(source, manifest) if manifest.blocks else None
         with open_directory(output.parent, create=True) as parent:
             require_absent(parent, output.name)
             with staging_directory(parent) as (name, staging):
@@ -20,7 +21,8 @@ def unpack(archive: Path, output: Path) -> Manifest:
                         if isinstance(entry, DirectoryEntry):
                             os.mkdir(path.name, mode=0o700, dir_fd=directory)
                         else:
-                            data = decode_file(source, entry, manifest.assets)
+                            data = (solid.decode(entry) if solid is not None
+                                    else decode_file(source, entry, manifest.assets))
                             fd = os.open(
                                 path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                                 0o600, dir_fd=directory,

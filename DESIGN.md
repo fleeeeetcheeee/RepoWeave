@@ -494,6 +494,30 @@ uv run repoweave verify examples/demo_repository .repoweave/restored
 
 **Done when:** round-trip tests pass for every codec and mixed archives; malformed input is rejected; interruption does not damage existing data; a clean process can decode with no API credentials or agent/cloud imports.
 
+### 6.4 Opt-in bounded solid blocks (follow-up)
+
+The implemented RPW V3 extension groups whole files in deterministic path order
+into independent stored/Zstd blocks. Policies may set `solid_block_bytes`; default
+policies and their content identities remain unchanged. A target is bounded to
+64 MiB; larger-than-target files use singleton blocks within the existing 64 MiB
+file limit. The writer compares full V3 bytes with same-level per-file V1 and emits
+V1 unless solid encoding is strictly smaller. V1/V2 remain readable.
+
+See [the V3 contract](docs/archive-format.md#v3-bounded-solid-blocks) and
+[task 14](docs/tasks/14-solid-blocks.md). This first implementation combines neither
+dictionaries nor graph grouping with solid blocks. It requires no new dependency,
+model, service, or remote asset. Local benchmark evidence must distinguish benefits
+over per-file RPW from results against whole-tree tar codecs.
+
+The subsequent [task 15](docs/tasks/15-metadata-solid-lzma.md) adds opt-in V4 metadata
+compression/compaction and solid LZMA. Every per-file SHA-256 is retained. A bounded
+six-byte metadata prefix describes representation, compression and decoded length;
+compact records expand to the same validated manifest. Existing codec limits and
+safe publication remain in force. See [the V4 contract](docs/archive-format.md#v4-compressedcompact-metadata-and-solid-lzma).
+Measure each stage separately on immutable snapshots with matched whole-tree
+controls. Neither a codec change nor weaker integrity may be presented as a
+repository-layout advantage.
+
 ## 7. Add the repository graph
 
 Start with Python's standard-library `ast`; Tree-sitter and other languages can wait.

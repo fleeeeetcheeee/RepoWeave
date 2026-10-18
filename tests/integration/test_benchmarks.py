@@ -26,12 +26,13 @@ def snapshot(tmp_path: Path):
     return create_snapshot(root, tmp_path / "snapshots")
 
 
-def test_real_benchmark_cli_without_credentials(tmp_path: Path) -> None:
+@pytest.mark.parametrize("solid_block_bytes", [None, 65536])
+def test_real_benchmark_cli_without_credentials(tmp_path: Path, solid_block_bytes: int | None) -> None:
     root = tmp_path / "input"
     root.mkdir()
     (root / "hello.py").write_bytes(b"print('synthetic')\n" * 100)
     policy = tmp_path / "policy.json"
-    policy.write_text(Policy().model_dump_json())
+    policy.write_text(Policy(solid_block_bytes=solid_block_bytes).model_dump_json())
     output = tmp_path / "results.json"
     command = [sys.executable, "-m", "repoweave.cli", "benchmark", str(root), "--policy", str(policy),
                "--output", str(output), "--warmups", "0", "--repeats", "2"]

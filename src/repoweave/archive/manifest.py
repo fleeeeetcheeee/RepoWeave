@@ -1,4 +1,4 @@
-"""Bounded RPW V1 manifests and the V2 embedded-dictionary extension."""
+"""Bounded RPW manifests: independent files, dictionaries, and solid blocks."""
 
 import base64
 import hashlib
@@ -67,7 +67,8 @@ class FileEntry(Entry):
     size: int = Field(ge=0, le=MAX_FILE_BYTES)
     sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     executable_bits: int = Field(ge=0, le=0o111)
-    codec: Literal["stored", "zstd", "lzma", "zstd_dictionary"]
+    codec: Literal["stored", "zstd", "lzma", "zstd_dictionary", "solid"]
+    block_index: int | None = Field(default=None, ge=0, lt=MAX_ENTRIES)
     dictionary_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     parameters: dict[str, int]
     offset: int = Field(ge=0, le=MAX_PAYLOAD_BYTES)
@@ -77,12 +78,36 @@ class FileEntry(Entry):
     def codec_metadata(self) -> Self:
         if self.executable_bits & ~0o111:
             raise ValueError("only executable permission bits are supported")
+        if self.codec == "solid":
+            if (self.block_index is None or self.parameters or self.dictionary_id is not None
+                    or self.length != self.size):
+                raise ValueError("invalid solid file metadata")
+            return self
+        if self.block_index is not None:
+            raise ValueError("only solid files may reference blocks")
         validate_options("zstd" if self.codec == "zstd_dictionary" else self.codec,
                          self.parameters, {})
         if (self.codec == "zstd_dictionary") != (self.dictionary_id is not None):
             raise ValueError("dictionary codec requires exactly one asset reference")
         if self.codec == "stored" and self.length != self.size:
             raise ValueError("stored payload length must equal file size")
+        return self
+
+
+class Block(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    codec: Literal["stored", "zstd", "lzma"]
+    parameters: dict[str, int]
+    size: int = Field(ge=0, le=MAX_FILE_BYTES)
+    offset: int = Field(ge=0, le=MAX_PAYLOAD_BYTES)
+    length: int = Field(ge=0, le=MAX_ENCODED_FILE_BYTES)
+
+    @model_validator(mode="after")
+    def codec_metadata(self) -> Self:
+        validate_options(self.codec, self.parameters, {})
+        if self.codec == "stored" and self.length != self.size:
+            raise ValueError("stored block length must equal decoded size")
         return self
 
 
@@ -93,9 +118,12 @@ class Manifest(BaseModel):
         max_length=MAX_ENTRIES
     )
     assets: dict[str, str] = Field(default_factory=dict, max_length=64)
+    blocks: list[Block] = Field(default_factory=list, max_length=MAX_ENTRIES)
 
     @model_validator(mode="after")
     def layout(self) -> Self:
+        if self.blocks and self.assets:
+            raise ValueError("solid archives cannot contain dictionary assets")
         referenced = {entry.dictionary_id for entry in self.entries
                       if isinstance(entry, FileEntry) and entry.dictionary_id is not None}
         if referenced != set(self.assets):
@@ -113,6 +141,8 @@ class Manifest(BaseModel):
         previous = ""
         offset = 0
         total = 0
+        block_index = -1
+        block_offset = 0
         for entry in self.entries:
             if entry.path <= previous:
                 raise ValueError("entries must have unique paths in sorted order")
@@ -126,16 +156,43 @@ class Manifest(BaseModel):
                 raise ValueError("each parent must be an explicit directory")
             paths[entry.path] = entry.kind
             if isinstance(entry, FileEntry):
-                if entry.offset != offset:
-                    raise ValueError("payloads must be contiguous in entry order")
-                offset += entry.length
+                if self.blocks:
+                    if entry.codec != "solid" or entry.block_index is None:
+                        raise ValueError("solid archives require solid files")
+                    if entry.block_index != block_index:
+                        if (entry.block_index != block_index + 1
+                                or entry.block_index >= len(self.blocks)
+                                or (block_index >= 0
+                                    and block_offset != self.blocks[block_index].size)):
+                            raise ValueError("invalid block reference or incomplete slices")
+                        block_index = entry.block_index
+                        block_offset = 0
+                    if entry.offset != block_offset:
+                        raise ValueError("block slices must be contiguous in file order")
+                    block_offset += entry.size
+                    if block_offset > self.blocks[block_index].size:
+                        raise ValueError("file slice exceeds block")
+                else:
+                    if entry.codec == "solid" or entry.offset != offset:
+                        raise ValueError("payloads must be contiguous in entry order")
+                    offset += entry.length
                 total += entry.size
+        if self.blocks:
+            if (block_index != len(self.blocks) - 1
+                    or block_offset != self.blocks[block_index].size):
+                raise ValueError("unused block or incomplete slices")
+            for block in self.blocks:
+                if block.offset != offset:
+                    raise ValueError("block payloads must be contiguous")
+                offset += block.length
         if offset > MAX_PAYLOAD_BYTES or total > MAX_TOTAL_BYTES:
             raise ValueError("archive exceeds aggregate size limits")
         return self
 
     @property
     def payload_size(self) -> int:
+        if self.blocks:
+            return sum(block.length for block in self.blocks)
         return sum(entry.length for entry in self.entries if isinstance(entry, FileEntry))
 
 
@@ -162,7 +219,9 @@ def parse_manifest(data: bytes, *, payload_size: int, version: int = VERSION) ->
         raise ArchiveFormatError("Invalid payload length")
     try:
         manifest = Manifest.model_validate(json.loads(data.decode("utf-8")))
-        if version not in (1, 2) or (version == 1 and manifest.assets):
+        if (version not in (1, 2, 3, 4) or (version == 1 and manifest.assets)
+                or (version < 3 and manifest.blocks) or (version == 3 and not manifest.blocks)
+                or (version < 4 and any(block.codec == "lzma" for block in manifest.blocks))):
             raise ValueError("unsupported manifest version")
         canonical = encode_manifest(manifest)
     except (ValidationError, UnicodeError, ValueError, RecursionError):
@@ -182,7 +241,7 @@ def parse_header(data: bytes) -> int:
     magic, version, manifest_length = HEADER.unpack(data)
     if magic != MAGIC:
         raise ArchiveFormatError("Invalid archive magic")
-    if version not in (VERSION, 2):
+    if version not in (VERSION, 2, 3, 4):
         raise ArchiveFormatError("Unsupported archive version")
     if not 0 < manifest_length <= MAX_MANIFEST_BYTES:
         raise ArchiveFormatError("Invalid manifest length")
