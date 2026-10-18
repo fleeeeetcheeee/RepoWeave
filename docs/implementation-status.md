@@ -1,5 +1,53 @@
 # Implementation verification
 
+## Redesigned dashboard: live judging rehearsal — October 18, 2026
+
+Ran the redesigned browser flow with real Factory and Daytona connections:
+
+```text
+cd web
+REPOWEAVE_LIVE_DEMO=1 REPOWEAVE_BROWSER_DEMO_ROOT=/Users/fletcherlee/Documents/RepoWeave/.repoweave/demos/judging-live-1792313588282 npm run test:e2e -- --grep 'real engine'
+1 passed in 2.7 minutes
+```
+
+The input was the owned, generated 97,409-byte demo fixture. Factory's cloud
+candidate selected Zstd level 19, compact metadata and 128 KiB shared blocks.
+The complete archive decreased from the compact solid-LZMA parent's 1,187 bytes
+to 1,119 bytes (5.7% smaller). It passed measured eligibility and was promoted
+within this isolated demo workspace. This is a fixture-specific comparison.
+
+Cloud run: `1dc23cbb1e93c8061f73dd5e58a3cfb37c4a070c389907aaeef18c4b39731552`.
+The experiment and independent decoder used distinct real Daytona sandbox IDs;
+both have confirmed `deleted` records. The independent decoder received only the
+selected archive. Its returned data passed the backend's exact-byte comparison
+against snapshot `b995a15ec042fa87573254b8beeb16afaee88c5fad17bf78432908e0a5abe38b`.
+The final download also passed separate-process decoding and local verification.
+
+The browser test additionally passed local Factory promotion (99,754 → 1,076
+archive bytes), old-archive decoding after promotion, all three V4 downloads,
+SSE reconnect, refresh recovery, demo run selection, single-beat presenter controls,
+mobile navigation and reduced motion. It did not run the local-only lost-response
+test in this live invocation. No new engine image, private dataset, public hosting,
+or LangSmith integration was involved.
+
+Receipt: `.repoweave/demos/judging-live-1792313588282/browser-receipt.json`.
+Archives, reports, restored files and screenshots remain in that directory's
+`exports/`. Reopen this same evidence with:
+
+```bash
+bash scripts/run_demo.sh --live --resume .repoweave/demos/judging-live-1792313588282
+```
+
+The launcher now accepts `--resume` without creating a fresh workspace. Shell syntax
+validation passed; three invalid invocations were rejected with exit code 2 and
+no new directory. The valid saved-workspace launch was checked against the API
+and browser. Credentials remain in backend configuration.
+
+Opening a saved run now synchronizes the selected repository with that run, including
+links that omit the repository parameter. After this UI fix, `npm run build` passed
+and the local browser suite passed both tests in 26.9 seconds with mocked cloud
+boundaries. The live receipt above remains the evidence for real cloud execution.
+
 ## V4 Daytona snapshot and remote reconstruction showcase — October 18, 2026
 
 Updated the existing cloud demonstration for compressed/compact V4 metadata and

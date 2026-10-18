@@ -2,7 +2,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {base, bytes, short} from './api';
 import type {Policy, Repository, Run, Workflow} from './api';
 import {Graph} from './Graph';
-import {Empty, Metric, describe} from './ui';
+import {Empty, Metric, describe, statusLabel} from './ui';
 
 type Report = {policy: Policy; policy_id: string; results: {score_bytes: number | null}[]};
 type Candidate = {policy: Partial<Policy>; rationale: string};
@@ -28,12 +28,16 @@ export function Demo({run, snapshot, workflow, visited, present, setPresent}: {
   const go = useCallback((index: number) => {
     const next = Math.max(0, Math.min(beats.length - 1, index));
     setBeat(next);
-    const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
-    document.getElementById(`beat-${next + 1}`)?.scrollIntoView({behavior: smooth ? 'smooth' : 'auto', block: 'start'});
-  }, []);
+    if (!present) {
+      const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+      document.getElementById(`beat-${next + 1}`)?.scrollIntoView({behavior: smooth ? 'smooth' : 'auto', block: 'start'});
+    }
+  }, [present]);
+  useEffect(() => {setBeat(0);}, [run?.id]);
+  useEffect(() => {if (present) window.scrollTo({top: 0, behavior: 'instant'});}, [present, beat]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest('input, select, textarea')) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || (e.target as HTMLElement).closest('input, select, textarea, [contenteditable="true"]')) return;
       if (e.key === 'ArrowRight' || e.key === 'PageDown') {e.preventDefault(); go(beat + 1);}
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {e.preventDefault(); go(beat - 1);}
       else if (e.key === 'Escape' && present) setPresent(false);
@@ -56,19 +60,27 @@ export function Demo({run, snapshot, workflow, visited, present, setPresent}: {
 
   return <div className="demo">
     <nav className="demo-stepper" aria-label="Demo beats">
-      <ol>{beats.map((b, i) => <li key={b.title}><button aria-current={beat === i ? 'step' : undefined} onClick={() => go(i)}><span className="beat-time">{b.time}</span>{b.title}</button></li>)}</ol>
-      <button className={present ? '' : 'primary'} onClick={() => setPresent(!present)}>{present ? 'Exit presenter (Esc)' : 'Present ▸'}</button>
+      <ol>{beats.map((b, i) => <li key={b.title}><button aria-label={`${b.time} ${b.title}`} aria-current={beat === i ? 'step' : undefined} onClick={() => go(i)}><span className="step-number">{String(i + 1).padStart(2, '0')}</span><span className="step-title">{['Input', 'Results', 'Run', 'Verify', 'Cleanup', 'Archive'][i]}</span></button></li>)}</ol>
+      <button className={present ? '' : 'primary'} onClick={() => setPresent(!present)}>{present ? 'Exit presenter (Esc)' : 'Present demo'}</button>
     </nav>
-    <p className="muted demo-run">Presenting {run.operation} run <code>{short(run.id)}</code> · {cloud ? 'Daytona execution' : 'local execution'} · status <strong>{run.status}</strong>. Use ← → to move between beats.</p>
+    <div className="demo-run"><span>Run <code>{short(run.id)}</code> <span aria-hidden="true">/</span> {cloud ? 'Daytona execution' : 'Local execution'}</span><span>Navigate with <kbd>←</kbd> <kbd>→</kbd></span></div>
 
-    <Beat index={0} current={beat}>{snapshot ? <>
+    {!present && <section className="demo-overview" aria-label="Run summary">
+      <div className="overview-heading"><div><p className="eyebrow">MEASURED. RECONSTRUCTED. RECORDED.</p><h2>From repository<br />to portable archive.</h2></div>
+        <span className="overview-status">{verified ? 'Independent decode verified' : 'Independent decode not verified'}</span></div>
+      <div className="overview-result"><div><span>Original snapshot</span><strong>{bytes(snapshot?.total_bytes)}</strong></div><span className="result-divider" aria-hidden="true">/</span><div><span>Portable archive</span><strong>{bytes(archive?.size)}</strong></div>
+        <div className="overview-ratio"><strong>{archive && snapshot?.total_bytes ? percent(archive.size, snapshot.total_bytes) : '—'}</strong><span>of original bytes, including overhead</span></div></div>
+      <div className="overview-footer"><span>{cloud ? 'Daytona' : 'Local'} execution <span aria-hidden="true">·</span> {statusLabel(run.status)}</span><span>6 beats <span aria-hidden="true">·</span> 60-second walkthrough</span></div>
+    </section>}
+
+    <Beat index={0} current={beat} present={present}>{snapshot ? <>
       <div className="metrics-grid"><Metric label="Snapshot" value={short(snapshot.snapshot_id)} /><Metric label="Included files" value={String(snapshot.file_count)} /><Metric label="Original bytes" value={bytes(snapshot.total_bytes)} /><Metric label="Excluded entries" value={String(snapshot.exclusions?.length || 0)} /></div>
       <div className="table-scroll"><table><caption>First {Math.min(6, snapshot.entries.length)} of {snapshot.entries.length} captured entries. Paths and hashes only; sources are never executed.</caption>
         <thead><tr><th>Path</th><th>Bytes</th><th>SHA-256</th></tr></thead>
         <tbody>{snapshot.entries.slice(0, 6).map(e => <tr key={e.path}><th scope="row"><code>{e.path}</code></th><td>{e.kind === 'file' ? bytes(e.size_bytes) : 'directory'}</td><td><code>{e.sha256 ? short(e.sha256) : '—'}</code></td></tr>)}</tbody></table></div>
     </> : missing('The snapshot for this run is not loaded.')}</Beat>
 
-    <Beat index={1} current={beat}>
+    <Beat index={1} current={beat} present={present}>
       {candidates.length ? <div className="proposal-list">{candidates.map((c, i) => {
         const report = measured.find(r => samePolicy(c.policy, r.policy));
         const size = report?.results[0]?.score_bytes;
@@ -86,7 +98,7 @@ export function Demo({run, snapshot, workflow, visited, present, setPresent}: {
       </> : missing('No measured decision is recorded for this run yet.')}
     </Beat>
 
-    <Beat index={2} current={beat}>
+    <Beat index={2} current={beat} present={present}>
       <div className="evidence-row"><span className={cloud ? 'pill good' : 'pill warn'}>{cloud ? 'Ran in a Daytona sandbox' : 'Ran on this computer'}</span>
         {cloud && <span className="tag">Experiment sandbox · {sandbox('experiment')?.status || 'no record'}</span>}
         {receipt && <span className="tag">Engine {receipt.engine_id}</span>}
@@ -94,7 +106,7 @@ export function Demo({run, snapshot, workflow, visited, present, setPresent}: {
       {workflow ? <Graph graph={{nodes: workflow.nodes.map(n => n.id), edges: workflow.edges}} visited={visited} title="Optimization workflow for this run" /> : missing('Workflow topology is not loaded.')}
     </Beat>
 
-    <Beat index={3} current={beat}>{receipt ? <>
+    <Beat index={3} current={beat} present={present}>{receipt ? <>
       <ol className="receipt-flow">
         <li><span className="step-label">Archive sent</span><code>SHA-256 {archive ? short(archive.sha256) : '—'}</code><small>{archive ? bytes(archive.size) : ''}</small></li>
         <li><span className="step-label">Fresh decoder sandbox</span><strong>Archive only</strong><small>No snapshot, credentials or training data</small></li>
@@ -104,23 +116,24 @@ export function Demo({run, snapshot, workflow, visited, present, setPresent}: {
       <p className={verified ? 'receipt-result good' : 'receipt-result warn'} role="status">{verified ? '✓ Byte-for-byte match with the original snapshot' : 'Receipt names a different snapshot. Not verified.'}</p>
     </> : missing(cloud ? 'No independent decoder receipt is recorded for this run yet.' : 'This run executed locally, so there is no fresh-sandbox decoder receipt. Present a Daytona run.')}</Beat>
 
-    <Beat index={4} current={beat}>{cloud ? <div className="sandbox-cards">{['experiment', 'decoder'].map(role => {
+    <Beat index={4} current={beat} present={present}>{cloud ? <div className="sandbox-cards">{['experiment', 'decoder'].map(role => {
       const status = sandbox(role)?.status;
       return <article key={role} className="sandbox-card"><h3>{role === 'experiment' ? 'Experiment sandbox' : 'Decoder sandbox'}</h3>
         <p>{role === 'experiment' ? 'Ran the baseline and Factory candidates.' : 'Received only the archive and restored it.'}</p>
         <span className={status === 'deleted' ? 'pill good' : 'pill warn'}>{status === 'deleted' ? '✓ Deleted' : status || 'No record'}</span></article>;
     })}</div> : missing('This run executed locally and created no sandboxes.')}</Beat>
 
-    <Beat index={5} current={beat}>{archive ? <div className="artifact-list"><article><div><span className="file-icon">RPW</span><h3>Archive · {short(archive.id)}</h3>
+    <Beat index={5} current={beat} present={present}>{archive ? <div className="artifact-list"><article><div><span className="file-icon">RPW</span><h3>Archive · {short(archive.id)}</h3>
       <p>{bytes(archive.size)}{snapshot?.total_bytes ? ` · ${percent(archive.size, snapshot.total_bytes)} of the original snapshot` : ''}</p>
-      <code className="hash">SHA-256 {archive.sha256}</code><p className="muted">Restore offline: <code>repoweave unpack {archive.id} -o restored</code></p></div>
+      <code className="hash">SHA-256 {archive.sha256}</code><p className="restore-command"><span>Restore offline</span><code>repoweave unpack {archive.id} -o restored</code></p></div>
       <a className="button primary" href={`${base}/artifacts/${archive.id}`} download={archive.id}>Download archive ↓</a></article></div> : missing('No archive is attached to this run.')}</Beat>
+    {present && <footer className="presenter-controls"><button disabled={beat === 0} onClick={() => go(beat - 1)}>Previous beat</button><p aria-live="polite" aria-atomic="true"><span>{beat + 1} / {beats.length}</span> {beats[beat].title}</p><button className="primary" disabled={beat === beats.length - 1} onClick={() => go(beat + 1)}>Next beat</button></footer>}
   </div>;
 }
 
-function Beat({index, current, children}: {index: number; current: number; children: React.ReactNode}) {
+function Beat({index, current, present, children}: {index: number; current: number; present: boolean; children: React.ReactNode}) {
   const b = beats[index];
-  return <section id={`beat-${index + 1}`} className={`panel beat ${current === index ? 'current' : ''}`} aria-labelledby={`beat-${index + 1}-title`}>
-    <div className="beat-head"><span className="beat-time">{b.time}</span><h2 id={`beat-${index + 1}-title`}>{b.title}</h2></div>
+  return <section hidden={present && current !== index} id={`beat-${index + 1}`} className={`panel beat ${current === index ? 'current' : ''}`} aria-labelledby={`beat-${index + 1}-title`}>
+    <div className="beat-head"><span className="beat-index">{String(index + 1).padStart(2, '0')}</span><h2 id={`beat-${index + 1}-title`}>{b.title}</h2><span className="beat-time">{b.time}</span></div>
     <p className="claim">{b.claim}</p>{children}</section>;
 }

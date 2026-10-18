@@ -66,7 +66,30 @@ metadata and optional 1 MiB/8 MiB shared compression blocks for Zstd/LZMA. Dicti
 partition-aware submissions remain CLI/API operations. Inventory and graphs bound
 their displayed rows/nodes, with explicit counts; source content is not displayed.
 
+## Present the evidence
+
+Open **Demo** and choose an optimization from **Present a run**. The overview shows
+the original and archive bytes, the archive's percentage of the input including
+overhead, and the saved verification status. This percentage is not an improvement
+over the parent policy; the measured policy comparison remains in beat 2.
+
+Choose **Present demo** for a single-beat stage. Use **Next beat** / **Previous beat**,
+the numbered navigation, arrow keys, or PageUp/PageDown. Only the current beat is
+visible in presenter mode. Esc returns to the complete evidence overview. A URL
+with `?present=1` opens the presenter directly; keep the `run` parameter to select
+a particular run. Reduced-motion preferences disable transitions. On phones, the
+**Run history** selector provides access to saved work without the desktop sidebar.
+
 ## Resume the same workspace
+
+To reopen a tested result with the API, worker and web app in one terminal:
+
+```bash
+bash scripts/run_demo.sh --live --resume .repoweave/demos/DEMO_DIRECTORY
+```
+
+This preserves its snapshots, run history and downloadable artifacts. Open **Demo**
+and select the saved optimization. Omit `--live` when cloud execution is not intended.
 
 Use the printed demo directory in two terminals, then start Vite in a third:
 
