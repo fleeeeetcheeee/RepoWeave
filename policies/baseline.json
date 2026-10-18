@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "baseline",
+  "codec": "zstd",
+  "zstd_level": 3,
+  "dictionary_id": null,
+  "grouping": "none"
+}

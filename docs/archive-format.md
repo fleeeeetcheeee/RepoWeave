@@ -1,9 +1,9 @@
 # RPW archive format, version 1
 
 This is the integration contract for DESIGN.md step 6.2. Header and manifest
-validation are implemented in `repoweave.archive.manifest`. Payload decoding,
-hash verification, filesystem extraction, and atomic publication remain work for
-the archive reader/writer. A valid manifest alone does not verify an archive.
+validation are implemented in `repoweave.archive.manifest`; reader/writer and
+encode/decode modules implement payload verification and safe publication.
+A valid manifest alone does not verify an archive. See [local usage](archive-usage.md).
 
 ## Envelope
 
@@ -131,7 +131,7 @@ must also prevent small compressed inputs from requesting unbounded allocation.
    destination, including a dangling symlink, by default. Publication must not
    replace a destination created concurrently; unsupported platforms must fail
    safely rather than silently fall back to a replacing rename.
-5. Write archives to an exclusive temporary sibling, flush and close, verify the
+5. Write archives in an exclusive temporary sibling directory, flush and close, verify the
    result, then atomically publish without replacing an existing archive. Never
    modify source files or remove another operation's files on failure. Crash
    durability beyond atomic visibility requires an explicit fsync policy later.
@@ -151,5 +151,6 @@ assembly because codecs do not know manifest overhead.
 
 The codec implementation follows these IDs, parameters, and per-file bounds;
 see [the codec API](codecs.md). Manifest validation shares option validation and
-size limits with `codecs/base.py`. Inventory and full archive integration still
-need verification when assembly is implemented.
+size limits with `codecs/base.py`. Assembly uses version 2 snapshot metadata and
+verifies copied bytes and executable masks before encoding. Integration tests cover
+inventory, codecs, manifest validation, extraction, and CLI round trips.

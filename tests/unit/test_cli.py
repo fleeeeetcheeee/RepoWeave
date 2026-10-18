@@ -35,11 +35,11 @@ def test_cli_configuration_error_is_secret_safe(tmp_path: Path) -> None:
 
 def test_unimplemented_command_is_rejected(tmp_path: Path) -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "repoweave.cli", "pack"],
+        [sys.executable, "-m", "repoweave.cli", "benchmark"],
         cwd=tmp_path, env={}, capture_output=True, text=True, check=False,
     )
     assert result.returncode == 2
-    assert "invalid choice: 'pack'" in result.stderr
+    assert "invalid choice: 'benchmark'" in result.stderr
 
 
 def test_analyze_captures_input_without_credentials(tmp_path: Path) -> None:
