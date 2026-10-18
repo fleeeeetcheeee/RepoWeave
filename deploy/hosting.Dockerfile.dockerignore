@@ -1,0 +1,18 @@
+# Explicit build context: never transmit .env, private inputs or local run state.
+**
+!pyproject.toml
+!uv.lock
+!src/
+!src/repoweave/
+!src/repoweave/**/
+!src/repoweave/**/*.py
+!src/repoweave/agents/prompts/*.md
+!examples/
+!examples/demo_repository/
+!examples/demo_repository/greetings.py
+!examples/demo_repository/README.md
+!examples/demo_repository/settings.json
+!deploy/
+!deploy/hosting.Dockerfile
+!deploy/hosting.Dockerfile.dockerignore
+!deploy/start-hosting.sh

@@ -16,7 +16,8 @@ events, checkpoints, and published artifacts live in `REPOWEAVE_DATA_DIR`.
 `python -m repoweave.runs.worker --once` processes one available job and exits.
 
 This is a local, single-user service. It rejects remote clients, unexpected Host
-headers, and cross-origin browser requests. Bind to loopback, without a public proxy.
+headers, and cross-origin browser requests except the exact dashboard development
+origin `http://127.0.0.1:5173`. Bind to loopback, without a public proxy.
 The default application remains local-only. The opt-in authenticated gateway and
 project worker are documented in [hosting](hosting.md); their local isolation tests
 do not constitute a verified public deployment.
@@ -76,8 +77,12 @@ No API input can specify dictionary filesystem paths.
 | Endpoint | Result |
 | --- | --- |
 | `GET /health` | Database readiness, without settings or credentials |
+| `GET /fixtures` | Configured fixture aliases and backend capability flags |
+| `GET /repositories` | Persisted snapshot metadata and inventory |
+| `GET /repositories/{id}` | One saved snapshot |
+| `GET /repositories/{id}/policy` | Active policy and promotion state |
 | `GET /runs` | Persisted API submissions |
-| `GET /runs/{id}` | Status, available comparison metrics, and artifact IDs |
+| `GET /runs/{id}` | Status, submitted policy, approval state, allowlisted evidence/verification reports, sandbox lifecycle and artifact IDs |
 | `GET /runs/{id}/events` | SSE progress with monotonic sequence IDs |
 | `POST /runs/{id}/approve` | Approve a real persisted workflow interrupt |
 | `POST /runs/{id}/resume` | Queue approved or interrupted work |
@@ -98,6 +103,13 @@ Only artifacts explicitly published by this API's worker are downloadable. Knowi
 a raw internal report hash or local path does not grant download access. Downloads
 reject symlinks, changed hashes, and oversized files. Validation and worker errors
 omit request values and exception payloads.
+
+Before publishing an archive, the worker decodes it in a separate process without
+service credentials and verifies supported files against the captured snapshot.
+The detail response contains its `archive-verification` receipt. Optimization also
+publishes comparison, diagnosis, proposal, decision and independent cloud decoder
+reports when available. The [dashboard](dashboard.md) uses these real responses;
+it does not manufacture progress or comparison measurements.
 
 ## Recovery
 

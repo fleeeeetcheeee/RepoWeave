@@ -11,7 +11,6 @@ import tempfile
 from pathlib import Path
 
 from repoweave.api.schemas import Submission
-from repoweave.archive.decode import unpack
 from repoweave.archive.integrity import verify
 from repoweave.config import Settings, load_settings
 from repoweave.experiments.schemas import file_hash
@@ -59,6 +58,18 @@ async def command(queue: Queue, identity: str, args: list[str], cwd: Path, timeo
         await proc.wait()
 
 
+async def verify_archive(queue: Queue, identity: str, archive: Path, source: Path,
+                         request: Submission, work: Path) -> None:
+    await command(queue, identity, ['unpack', str(archive), '--output', str(work / 'restored')],
+                  work, request.limits.decode_seconds)
+    await asyncio.to_thread(verify, source, work / 'restored')
+    queue.store.phase(identity, 'archive-verification', {
+        'reconstructed': True, 'snapshot_id': request.repository_id,
+        'archive_sha256': file_hash(archive), 'archive_bytes': archive.stat().st_size,
+        'method': 'Separate decoder process with empty service environment; exact byte/inventory comparison',
+    })
+
+
 async def process(queue: Queue, row: dict, settings: Settings, *, agents=None) -> None:
     identity, store = row["id"], queue.store
     request = Submission.model_validate(row["request"])
@@ -85,8 +96,17 @@ async def process(queue: Queue, row: dict, settings: Settings, *, agents=None) -
         result = await service.execute(store, identity, selected, **kwargs)
         selected_archive = store.root / "runs" / identity / "selected.rpw"
         if selected_archive.exists():
+            with tempfile.TemporaryDirectory(dir=selected_archive.parent) as temporary:
+                await verify_archive(queue, identity, selected_archive, source, request,
+                                     Path(temporary))
             queue.publish(identity, selected_archive, "archive")
-        for phase in ("baseline", "decision", "summary"):
+        with store.connect() as db:
+            phases = [row[0] for row in db.execute('SELECT phase FROM phases WHERE run_id=?',
+                                                   (identity,))]
+        for phase in phases:
+            if phase not in {'baseline', 'diagnosis', 'proposals', 'decision', 'summary',
+                             'independent-decode', 'archive-verification'} and not phase.startswith('candidate-'):
+                continue
             artifact = store.phase(identity, phase)
             if artifact:
                 store.read_artifact(artifact)
@@ -125,8 +145,7 @@ async def process(queue: Queue, row: dict, settings: Settings, *, agents=None) -
                 4 * (request.repeats + request.warmups) if request.operation == "benchmark" else 1)
             await command(queue, identity, args, work, timeout)
             if request.operation == "pack":
-                await asyncio.to_thread(unpack, output, work / "restored")
-                await asyncio.to_thread(verify, source, work / "restored")
+                await verify_archive(queue, identity, output, source, request, work)
             else:
                 report = json.loads(output.read_bytes())
                 if report["snapshot"]["snapshot_id"] != request.repository_id:

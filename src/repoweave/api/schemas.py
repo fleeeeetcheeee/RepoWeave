@@ -1,6 +1,6 @@
 """Browser inputs contain fixture and content IDs, never server paths or commands."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -38,3 +38,60 @@ class Submission(StrictModel):
         if (self.splits is None) != (self.partition_repository_id is None):
             raise ValueError("Partitions and repository identity must be supplied together")
         return self
+
+
+class SnapshotEntry(StrictModel):
+    path: str
+    kind: Literal['file', 'directory']
+    size_bytes: int | None = None
+    sha256: str | None = None
+    executable_bits: int | None = None
+
+
+class SnapshotMetadata(StrictModel):
+    schema_version: int
+    scope: str
+    snapshot_id: Identity
+    entries: list[SnapshotEntry]
+    exclusions: list[dict[str, str]]
+    file_count: int
+    total_bytes: int
+
+
+class SnapshotView(StrictModel):
+    id: Identity
+    snapshot: SnapshotMetadata
+
+
+class ArtifactView(StrictModel):
+    id: Identity
+    sha256: Identity
+    size: int
+    kind: str
+
+
+class RunView(StrictModel):
+    id: Identity
+    status: str
+    cancel_requested: bool
+    operation: Literal['pack', 'benchmark', 'optimize']
+    repository_id: Identity
+    execution: Literal['local', 'daytona']
+    policy: Policy
+    approved: bool = False
+    artifacts: list[ArtifactView]
+    metrics: dict[str, Any] | None = None
+    reports: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    sandboxes: list[dict[str, str]] = Field(default_factory=list)
+
+
+class PolicyView(StrictModel):
+    policy_id: Identity
+    policy: Policy
+    promoted: bool
+
+
+class Capabilities(StrictModel):
+    fixtures: list[str]
+    factory: bool
+    daytona: bool

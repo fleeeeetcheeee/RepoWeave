@@ -1,10 +1,10 @@
 # RepoWeave
 Group Repository for HackHarvard 2026
 
-Implementation through DESIGN.md steps 10–13: lossless archives, static Python repository
+Implementation through DESIGN.md steps 10–14: lossless archives, static Python repository
 graphs, trained dictionaries, measured optimization with Factory, optional LangSmith
 traces, bounded Daytona experiments with a separate decoder sandbox, and a local API
-with a persistent job queue and separate worker.
+with a persistent job queue, separate worker and local React dashboard.
 
 ```bash
 uv sync --locked
@@ -20,8 +20,9 @@ Use fresh output names on repeat runs. No service credentials are required.
 - [Factory agents and the opt-in live test](docs/factory-agents.md)
 - [Optimization, approvals, cloud execution, and tracing](docs/optimization.md)
 - [Local API and persistent jobs](docs/api.md)
+- [Local dashboard and reproducible demo](docs/dashboard.md)
 - [Daytona engine snapshot setup](docs/daytona-snapshot.md)
 - [Implementation verification](docs/implementation-status.md)
 
-The dashboard and neural codecs remain later steps. Compression improvements
+Public deployment is optional; neural codecs remain a later step. Compression improvements
 are hypotheses; compare full archives and resource measurements before making claims.

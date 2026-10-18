@@ -1,4 +1,131 @@
-# Steps 6–9 verification
+# Implementation verification
+
+## Step 14 — local dashboard and live demonstration (October 18, 2026)
+
+Implemented the React/Vite/TypeScript Repository, Archive, Benchmarks and
+Optimization views against real persisted API responses. Types are generated from
+OpenAPI. The UI shows the actual repository/workflow graphs, measurements, evidence,
+approval state, downloads, verification receipts and sandbox lifecycle. It restores
+the selected run after refresh and reconnects SSE after the last event sequence.
+Only eligible verified candidates enable promotion. Errors, cancellations and
+no-improvement outcomes remain explicit. A lost submission response can be retried
+with the same idempotency key without duplicating the job.
+
+The API exposes saved snapshot/policy reads and allowlisted reports. Before publishing
+an archive the worker independently decodes it in a separate process without service
+credentials, then verifies exact supported bytes/inventory. CORS permits only the
+exact local dashboard origin in addition to existing local API access. The archive
+format, codecs and deterministic compression engine were not changed.
+
+**Live smoke demonstration: passed**, using the owned generated fixture (11 files,
+97,409 included bytes), real Factory analyst/proposer calls and real Daytona execution.
+The UI packed, downloaded and independently decoded the original archive; benchmarked
+it; promoted an eligible local candidate; packed with the promoted policy; decoded
+both the new archive and the old archive again; ran the cloud experiment; reloaded
+the same persisted run; and exported its artifacts. The original stored control was
+99,754 archive bytes and the selected zstd archive was 3,472 bytes. This demonstrates
+promotion from an uncompressed control, **not superiority over plain zstd**. The
+subsequent cloud search found no further improvement and correctly retained 3,472
+bytes. Independent cloud reconstruction passed. Experiment and decoder sandboxes
+both have confirmed `deleted` lifecycle receipts; the executor exported verified
+results before cleanup.
+
+Durable local evidence (ignored, intentionally not committed):
+
+- Mocked-boundary browser receipt: `.repoweave/demos/e2e-1792304940025/browser-receipt.json`.
+- Live browser receipt: `.repoweave/demos/live-1792304715499/browser-receipt.json`.
+- Live local promotion: `5dcf2c87e6e6d19818acfd94f87e6306bac0d8a8b6722fc3db99208c1f6474b0`.
+- Live cloud run: `b657461f75975c1dd42809c552ace7be3580b82548d4703663eb94b348cb05c3`.
+- Both demo directories contain persistent stores and `exports/` with downloaded
+  artifacts, independent reconstructions and desktop/mobile screenshots.
+
+Checks actually run:
+
+```text
+.venv/bin/pytest -q tests/integration/test_dashboard_api.py tests/integration/test_api.py tests/integration/test_hosting.py tests/integration/test_hosted_server.py tests/integration/test_optimization.py --tb=short
+58 passed in 26.81s
+
+cd web && npm run test:e2e
+2 passed in 21.0s (mock Factory/Daytona boundaries; real engine)
+
+cd web && REPOWEAVE_LIVE_DEMO=1 npm run test:e2e
+1 passed in 2.7 minutes (separately labeled live demonstration)
+
+cd web && npm run generate:api
+cd web && npm run build
+Passed: generated types, strict TypeScript and production bundle
+
+.venv/bin/ruff check src tests scripts
+All checks passed
+
+.venv/bin/mypy src/repoweave
+Success: no issues found in 67 source files
+
+bash -n scripts/run_demo.sh
+bash scripts/run_demo.sh
+Passed: fresh directory, API/worker/Vite readiness, Ctrl-C graceful shutdown,
+no remaining listeners on ports 8000/5173
+
+git diff --check
+Passed
+```
+
+The 58-test suite includes API restart, checkpoint resume, cancellation, real
+project isolation, promotion conflicts and remote failure cleanup. Browser coverage
+includes an intentionally cut SSE stream with a nonzero resume cursor, page refresh,
+lost-response retry and a 390-pixel layout without page overflow. Desktop/mobile
+screenshots were inspected. The final loading/dictionary-policy control guards and
+additional local failure-injection test were verified locally after the live run;
+the live cloud demo was not repeated solely for those UI changes.
+
+Public deployment remains **optional and unprovisioned**: no Fly resources, remote
+build or public dashboard were created. Auth0 login integration and real public
+multi-user browser acceptance remain untested. This task did not reread or upload
+private financial datasets. Dictionary training/partition-aware submission stays
+in the CLI/API; the dashboard currently submits ordinary stored/zstd/lzma policies.
+Cross-browser/OS coverage and the full Python regression suite were not rerun for
+this step. See [dashboard instructions](dashboard.md) to launch or resume a demo.
+
+## Fly/Auth0 setup follow-up — October 18, 2026
+
+The user approved Auth0 registration and explicitly chose **prepare only, no
+charges** for Fly. In the existing development tenant, created RepoWeave Dashboard
+as a Single Page Application and RepoWeave API with audience `https://repoweave-api`,
+RS256 and permission `repoweave:use`. Saved maximum and implicit/hybrid access-token
+lifetimes of 900 seconds. API user-delegated access is per-app; the Dashboard has
+exactly this one permission (verified in the dashboard). Client/M2M access is denied
+by API policy. Auth0 automatically created an API test application; it has no usable
+client access under that policy. Existing Default App access was not granted.
+
+Public callbacks/logout/origins remain empty because no Fly hostname is reserved.
+No user passwords, client secrets or signing keys were read or copied. Tenant/client
+public configuration and a hosting example are saved under ignored `.repoweave/hosting/`.
+Actual application-user subjects are still required before deployment.
+
+Installed the official Fly CLI under ignored `.repoweave/tools/fly/`. Prepared the
+container, explicit source/demo build allowlist, single-Machine TOML, persistent-volume
+entrypoint and API/worker supervisor. No Fly app, volume, IP, remote build or Machine
+was created; no source/dataset upload occurred. The CLI's strict configuration
+validation could not run without Fly CLI login. Local TOML parsing and host/VM
+assertions passed. Docker is not installed here, so the image has not been built.
+
+Checks on the final code:
+
+```sh
+.venv/bin/pytest -q tests/integration/test_hosted_server.py tests/integration/test_hosting.py --tb=short
+.venv/bin/ruff check src tests scripts
+.venv/bin/mypy src/repoweave
+git diff --check
+```
+
+Results: **11 passed in 3.59s**, Ruff passed, mypy passed for **67 source files**,
+and whitespace checks passed. New tests cover sibling shutdown after child failure,
+forced shutdown of an unresponsive child, partial startup failure, safe configuration
+errors and graceful SIGTERM. Existing real JWT/project isolation and worker tests ran.
+No dependency or lockfile versions changed. Full regression suite was not rerun in
+this setup-only follow-up. Real user login/token issuance, public TLS, public
+cross-user isolation, container execution and volume backup/recovery remain untested.
+See [setup instructions](hosting-setup.md) for the remaining steps.
 
 Verified locally on macOS with Python 3.12.15 and the existing `uv.lock`.
 

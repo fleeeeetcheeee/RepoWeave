@@ -17,6 +17,10 @@ have not been supplied or tested. No API was published. Do not expose the defaul
 
 ## Configuration
 
+For a guided initial account/deployment setup, follow
+[Fly + Auth0 setup](hosting-setup.md). Deployment templates are in `deploy/`;
+the default localhost-only API remains unchanged.
+
 Create an operator-owned JSON file outside the checkout or under ignored `.repoweave/`:
 
 ```json

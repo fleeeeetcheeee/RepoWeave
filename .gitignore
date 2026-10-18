@@ -20,4 +20,6 @@ artifacts/
 !tests/fixtures/archives/*.rpw
 web/node_modules/
 web/dist/
+web/test-results/
+web/playwright-report/
 .DS_Store
