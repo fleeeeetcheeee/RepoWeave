@@ -156,6 +156,31 @@ test('real engine: capture, benchmark, promote, old decode, cloud receipt and re
     await page.setViewportSize({width: 390, height: 844});
     await screenshot('mobile.png');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    // Demo view: the six onstage beats for the cloud run, then presenter navigation.
+    await page.setViewportSize({width: 1440, height: 1000});
+    await page.getByRole('navigation', {name: 'Workspace views'}).getByRole('button', {name: /Demo/}).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('run')).toBe(cloud.id);
+    for (const title of ['Captured input', 'Proposal and measured result', 'Remote experiment',
+      'Independent decoder receipt', 'Sandbox cleanup', 'Portable archive']) {
+      await expect(page.getByRole('heading', {name: title, exact: true})).toBeVisible();
+    }
+    await expect(page.getByText('✓ Byte-for-byte match with the original snapshot')).toBeVisible();
+    await expect(page.getByText('✓ Deleted', {exact: true})).toHaveCount(2);
+    await expect(page.getByText('Ran in a Daytona sandbox', {exact: true})).toBeVisible();
+    await expect(page.getByRole('link', {name: 'Download archive'})).toHaveAttribute('href', new RegExp(`/artifacts/${cloud.artifacts.find((a: {kind: string}) => a.kind === 'archive').id}$`));
+    await page.getByRole('button', {name: 'Present ▸'}).click();
+    await expect(page.locator('.sidebar')).toBeHidden();
+    expect(new URL(page.url()).searchParams.get('present')).toBe('1');
+    await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight');
+    await expect(page.getByRole('button', {name: /Independent decoder receipt/})).toHaveAttribute('aria-current', 'step');
+    await expect(page.locator('#beat-4')).toBeInViewport({ratio: 0.5});
+    await page.screenshot({path: path.join(exports, 'demo-present.png')});
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.sidebar')).toBeVisible();
+    await screenshot('demo.png');
+    await page.setViewportSize({width: 390, height: 844});
+    await screenshot('demo-mobile.png');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
     expect(errors).toEqual([]);
     receipt.status = 'passed';
   } finally {

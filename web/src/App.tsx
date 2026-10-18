@@ -3,16 +3,16 @@ import {api, base, bytes, paused, short, terminal} from './api';
 import type {Capabilities, Graph as GraphData, Policy, PolicyView, Progress, Repository, Run, Submission, Workflow} from './api';
 import {Graph} from './Graph';
 import {Benchmarks} from './Benchmarks';
+import {Demo} from './Demo';
+import {Empty, JsonDetails, Metric, describe} from './ui';
 import type {Benchmark} from './Benchmarks';
 
-const tabs = ['Repository', 'Archive', 'Benchmarks', 'Optimization'] as const;
+const tabs = ['Repository', 'Archive', 'Benchmarks', 'Optimization', 'Demo'] as const;
 type Tab = typeof tabs[number];
 const query = new URLSearchParams(location.search);
 const defaultPolicy: Policy = {schema_version: 1, name: 'baseline', codec: 'zstd', zstd_level: 3, dictionary_id: null, grouping: 'none', metadata_encoding: 'json'};
 const message = (error: unknown) => error instanceof Error ? error.message : 'Request failed';
 
-function Empty({children}: {children: React.ReactNode}) {return <div className="empty"><span aria-hidden="true">↗</span><p>{children}</p></div>;}
-function JsonDetails({title, value}: {title: string; value: unknown}) {return <details><summary>{title}</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>;}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>(tabs.find(t => t.toLowerCase() === query.get('view')) || 'Repository');
@@ -35,6 +35,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [reportKey, setReportKey] = useState('');
+  const [present, setPresent] = useState(query.get('present') === '1');
   const pendingSubmission = useRef<{key: string; body: string} | null>(null);
   const repository = repositories.find(r => r.id === repoId);
   const snapshot = repository?.snapshot;
@@ -61,8 +62,17 @@ export default function App() {
     params.set('view', tab.toLowerCase());
     if (repoId) params.set('repo', repoId);
     if (runId) params.set('run', runId);
+    if (present && tab === 'Demo') params.set('present', '1');
     history.replaceState(null, '', '?' + params);
-  }, [tab, repoId, runId]);
+  }, [tab, repoId, runId, present]);
+
+  // The Demo view presents an optimization run; prefer the newest Daytona one.
+  useEffect(() => {
+    if (tab !== 'Demo' || runs.find(r => r.id === runId)?.operation === 'optimize') return;
+    const optimizations = runs.filter(r => r.operation === 'optimize');
+    const pick = optimizations.filter(r => r.execution === 'daytona').at(-1) || optimizations.at(-1);
+    if (pick) {setRunId(pick.id); setRepoId(pick.repository_id);}
+  }, [tab, runs, runId]);
 
   useEffect(() => {
     setApprovedTransfer(false); setGraph(null); setActivePolicy(null);
@@ -170,7 +180,8 @@ export default function App() {
   const canApprove = run?.status === 'awaiting-approval' && decision?.eligible === true && !run.cancel_requested && !run.approved;
   const visibleRuns = runs.filter(r => !repoId || r.repository_id === repoId).slice().reverse();
 
-  return <div className="app-shell">
+  const presenting = present && tab === 'Demo';
+  return <div className={presenting ? 'app-shell presenting' : 'app-shell'}>
     <aside className="sidebar"><a href="?view=repository" className="brand"><span className="brand-symbol" aria-hidden="true">W</span>RepoWeave<span className="beta">LAB</span></a>
       <p className="side-caption">COMPRESSION WORKBENCH</p>
       <nav aria-label="Workspace views">{tabs.map((t, i) => <button key={t} aria-current={tab === t ? 'page' : undefined} onClick={() => setTab(t)}><span className="nav-number">0{i + 1}</span>{t}<span aria-hidden="true">↗</span></button>)}</nav>
@@ -179,15 +190,15 @@ export default function App() {
       </section><div className="side-footer"><span className="status-dot" />Local workspace<p>Runs stay on this computer.<br />Public hosting is optional.</p></div>
     </aside>
     <main id="main"><header className="topbar"><span>Workspace <span className="slash">/</span> <strong>{tab}</strong></span><span className="connection" role="status"><span className="status-dot" />{connection}</span></header>
-      <div className="page"><div className="page-heading"><div><p className="eyebrow">LOSSLESS BY CONSTRUCTION</p><h1>{tab === 'Repository' ? 'Know what you compress.' : tab === 'Archive' ? 'Every byte accounted for.' : tab === 'Benchmarks' ? 'Let the measurements decide.' : 'Explore. Measure. Verify.'}</h1><p className="lede">{tab === 'Repository' ? 'Capture an immutable snapshot, inspect its structure, and start a measured experiment.' : tab === 'Archive' ? 'Portable archives, explicit policies, and exact reconstruction.' : tab === 'Benchmarks' ? 'Compare complete deliverables under the same resource limits.' : 'Follow real workflow progress. Promote only a verified improvement.'}</p></div><span className="local-badge">↳ LOCAL FIRST</span></div>
+      <div className="page"><div className="page-heading"><div><p className="eyebrow">LOSSLESS BY CONSTRUCTION</p><h1>{tab === 'Repository' ? 'Know what you compress.' : tab === 'Archive' ? 'Every byte accounted for.' : tab === 'Benchmarks' ? 'Let the measurements decide.' : tab === 'Demo' ? 'One run, every claim checked.' : 'Explore. Measure. Verify.'}</h1><p className="lede">{tab === 'Repository' ? 'Capture an immutable snapshot, inspect its structure, and start a measured experiment.' : tab === 'Archive' ? 'Portable archives, explicit policies, and exact reconstruction.' : tab === 'Benchmarks' ? 'Compare complete deliverables under the same resource limits.' : tab === 'Demo' ? 'A completed optimization, from input snapshot to portable archive, in six beats.' : 'Follow real workflow progress. Promote only a verified improvement.'}</p></div><span className="local-badge">↳ LOCAL FIRST</span></div>
       {error && <div className="error" role="alert">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
-      <section className="panel setup-panel" aria-label="Repository and run controls">
+      {tab !== 'Demo' && <section className="panel setup-panel" aria-label="Repository and run controls">
         <div className="control-row"><label>Approved fixture<select aria-label="Approved fixture" value={fixture} onChange={e => setFixture(e.target.value)}>{capabilities?.fixtures.map(name => <option key={name}>{name}</option>)}</select></label><button className="primary" disabled={busy || !fixture} onClick={register}>Capture snapshot <span aria-hidden="true">↗</span></button>
           <label className="snapshot-select">Saved snapshot<select aria-label="Saved snapshot" value={repoId} onChange={e => {setRepoId(e.target.value); setRunId(''); setUseActive(true);}}><option value="">Choose a snapshot</option>{repositories.map(r => <option key={r.id} value={r.id}>{short(r.id)} · {r.snapshot.file_count} files</option>)}</select></label>
         </div>
         {repository && <><div className="control-row job-controls"><label className="check"><input type="checkbox" checked={useActive} onChange={e => setUseActive(e.target.checked)} />Use active policy</label>
           {!useActive && <><label>Codec<select aria-label="Codec" value={policy.codec} onChange={e => setPolicy({...defaultPolicy, codec: e.target.value as Policy['codec']})}><option value="zstd">Zstd</option><option value="stored">Stored (uncompressed control)</option><option value="lzma">LZMA</option></select></label>{policy.codec === 'zstd' && <label>Zstd level<input aria-label="Zstd level" type="number" min="-7" max="22" value={policy.zstd_level} onChange={e => setPolicy({...policy, zstd_level: Number(e.target.value)})} /></label>}<label>Metadata<select aria-label="Metadata" value={policy.metadata_encoding || 'json'} onChange={e => setPolicy({...policy, metadata_encoding: e.target.value as Policy['metadata_encoding']})}><option value="json">JSON</option><option value="compressed">Compressed JSON</option><option value="compact">Compact</option></select></label>{policy.codec !== 'stored' && <label>Shared compression blocks<select aria-label="Shared compression blocks" value={policy.solid_block_bytes || 0} onChange={e => setPolicy({...policy, solid_block_bytes: Number(e.target.value) || null})}><option value="0">Per file</option><option value="1048576">1 MiB target</option><option value="8388608">8 MiB target</option></select></label>}</>}
-          <span className="policy-label">{selectedPolicy.codec}{selectedPolicy.codec === 'zstd' ? ` · level ${selectedPolicy.zstd_level}` : ''}{selectedPolicy.dictionary_id ? ' · dictionary' : ''}{selectedPolicy.solid_block_bytes ? ` · ${selectedPolicy.solid_block_bytes / 1048576} MiB solid` : ''}{selectedPolicy.metadata_encoding && selectedPolicy.metadata_encoding !== 'json' ? ` · ${selectedPolicy.metadata_encoding} metadata` : ''}</span>
+          <span className="policy-label">{describe(selectedPolicy)}</span>
           <div className="action-buttons"><button disabled={busy || policyUnavailable} onClick={() => submit('pack')}>Create archive</button><button disabled={busy || policyUnavailable} onClick={() => submit('benchmark')}>Run benchmark</button></div></div>
           {selectedPolicy.dictionary_id && <p className="notice">Dictionary policies require training partition metadata through the CLI or API. Uncheck Use active policy to choose an ordinary codec here.</p>}
           <details className="optimization-controls"><summary>Optimization settings</summary><div className="control-row"><label>Experiment execution<select aria-label="Experiment execution" value={execution} onChange={e => {setExecution(e.target.value as 'local' | 'daytona'); setApprovedTransfer(false);}}><option value="local">This computer</option><option value="daytona" disabled={!capabilities?.daytona}>Daytona sandbox{!capabilities?.daytona ? ' (backend not enabled)' : ''}</option></select></label><p className="muted">Factory receives measurement summaries. Two measured repetitions and one warmup; 120 seconds per phase.</p></div>
@@ -195,14 +206,14 @@ export default function App() {
             <button className="primary" disabled={busy || policyUnavailable || !capabilities?.factory || (execution === 'daytona' && !approvedTransfer)} onClick={() => submit('optimize')}>Start optimization</button>
             {!capabilities?.factory && <p className="muted">Factory’s Droid CLI must be installed on the backend to optimize. Packing and benchmarks work without it.</p>}
           </details></>}
-      </section>
+      </section>}
 
       {tab === 'Repository' && (snapshot ? <><div className="metrics-grid"><Metric label="Included files" value={String(snapshot.file_count)} /><Metric label="Original bytes" value={bytes(snapshot.total_bytes)} /><Metric label="Import edges" value={String(graph?.edges.length ?? '—')} /><Metric label="Excluded entries" value={String(snapshot.exclusions?.length || 0)} /></div>
         <section className="panel"><div className="section-heading"><div><h2>Repository structure</h2><p>Static Python imports. This is not the archive decode graph.</p></div><span className="tag">Snapshot {short(repoId)}</span></div>{graph && <Graph graph={graph} title="Repository import graph" />}{graph?.diagnostics?.length ? <JsonDetails title={`Unresolved imports and diagnostics (${graph.diagnostics.length})`} value={graph.diagnostics} /> : null}</section>
         <section className="panel"><h2>Snapshot inventory</h2><p className="muted">{snapshot.scope} · Paths and metadata only; source files are never executed.</p><Inventory entries={snapshot.entries || []} /><JsonDetails title={`Excluded entries (${snapshot.exclusions?.length || 0})`} value={snapshot.exclusions || []} /><JsonDetails title="Snapshot identity" value={{id: repoId, active_policy: activePolicy}} /></section>
       </> : <Empty>Capture an approved fixture to inspect its files and import graph.</Empty>)}
 
-      {tab !== 'Repository' && <section className="panel run-panel"><div className="section-heading"><div><h2>{run ? `${run.operation[0].toUpperCase()}${run.operation.slice(1)} run` : 'Choose a run'}</h2><p>{run ? `${short(run.id)} · ${run.execution === 'daytona' ? 'Daytona execution' : 'Local execution'}` : 'Create a run above or select one from the history.'}</p></div>{run && <span data-testid="run-status" className={`pill ${terminal.has(run.status) && !['failed', 'cancelled'].includes(run.status) ? 'good' : 'warn'}`}>{run.status}</span>}</div>
+      {tab !== 'Repository' && tab !== 'Demo' && <section className="panel run-panel"><div className="section-heading"><div><h2>{run ? `${run.operation[0].toUpperCase()}${run.operation.slice(1)} run` : 'Choose a run'}</h2><p>{run ? `${short(run.id)} · ${run.execution === 'daytona' ? 'Daytona execution' : 'Local execution'}` : 'Create a run above or select one from the history.'}</p></div>{run && <span data-testid="run-status" className={`pill ${terminal.has(run.status) && !['failed', 'cancelled'].includes(run.status) ? 'good' : 'warn'}`}>{run.status}</span>}</div>
         {run && <><div className="run-actions"><button disabled={busy || !canApprove} onClick={() => control('approve')}>Approve &amp; promote</button><button disabled={busy || !(run.status === 'interrupted' || (run.status === 'awaiting-approval' && run.approved))} onClick={() => control('resume')}>Resume run</button><button disabled={busy || terminal.has(run.status) || run.cancel_requested} onClick={() => control('cancel')}>{run.cancel_requested ? 'Cancellation requested' : 'Cancel run'}</button></div>
         {run.status === 'failed' && <p role="alert" className="notice">This run failed. No improvement is claimed. Inspect the event timeline for the failure category.</p>}
         {run.status === 'completed-without-improvement' && <p className="notice">No verified improvement. The active policy was retained.</p>}
@@ -223,13 +234,13 @@ export default function App() {
         {reports.summary && <section className="panel"><h2>Experiment conclusion</h2><p>{reports.summary.outcome}</p><p>{reports.summary.limitations}</p></section>}
         {!!run?.sandboxes?.length && <section className="panel"><h2>Remote reconstruction showcase</h2><p>Compress remotely → reconstruct in a fresh environment → verify exact bytes</p><ul>{run.sandboxes.map(s => <li key={s.role}>{s.role}: <strong>{s.status}</strong></li>)}</ul>{reports['independent-decode'] && <JsonDetails title="Independent decoder sandbox receipt" value={reports['independent-decode']} />}</section>}
         <section className="panel"><h2>Persisted event timeline</h2><p className="muted">Reconnects resume after the last sequence. Showing the latest {events.length} events (up to 200).</p>{events.length ? <ol className="timeline">{events.map(e => <li key={e.sequence}><span className="event-sequence">{e.sequence}</span><div><strong>{e.kind}</strong><code>{JSON.stringify(e.data)}</code></div></li>)}</ol> : <Empty>Start an optimization to follow measured progress.</Empty>}{run && <ArtifactLinks run={run} />}</section></>}
+      {tab === 'Demo' && <Demo run={run} snapshot={repositories.find(r => r.id === run?.repository_id)?.snapshot} workflow={workflow} visited={visited} present={present} setPresent={setPresent} />}
       <footer className="page-footer">RepoWeave <span>Supported files are reconstructed byte for byte. Research results are specific to the measured dataset.</span></footer>
       </div>
     </main>
   </div>;
 }
 
-function Metric({label, value}: {label: string; value: string}) {return <div className="metric"><p>{label}</p><strong>{value}</strong></div>;}
 function ArtifactLinks({run}: {run: Run}) {return <div className="report-links">{run.artifacts.filter(a => a.kind !== 'archive').map(a => <a key={a.id} href={`${base}/artifacts/${a.id}`} download={`${a.kind}.json`}>Download {a.kind} ↓</a>)}</div>;}
 function Inventory({entries}: {entries: {path: string; kind: string; size_bytes?: number | null; sha256?: string | null}[]}) {
   const [filter, setFilter] = useState('');
