@@ -1,5 +1,7 @@
-"""The bounded, portable RPW V1 header and manifest contract."""
+"""Bounded RPW V1 manifests and the V2 embedded-dictionary extension."""
 
+import base64
+import hashlib
 import json
 import re
 import struct
@@ -8,7 +10,12 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from repoweave.codecs.base import MAX_ENCODED_FILE_BYTES, MAX_FILE_BYTES, validate_options
+from repoweave.codecs.base import (
+    MAX_DICTIONARY_BYTES,
+    MAX_ENCODED_FILE_BYTES,
+    MAX_FILE_BYTES,
+    validate_options,
+)
 
 MAGIC = b"RPWEAVE\0"
 VERSION = 1
@@ -60,7 +67,8 @@ class FileEntry(Entry):
     size: int = Field(ge=0, le=MAX_FILE_BYTES)
     sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     executable_bits: int = Field(ge=0, le=0o111)
-    codec: Literal["stored", "zstd", "lzma"]
+    codec: Literal["stored", "zstd", "lzma", "zstd_dictionary"]
+    dictionary_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     parameters: dict[str, int]
     offset: int = Field(ge=0, le=MAX_PAYLOAD_BYTES)
     length: int = Field(ge=0, le=MAX_ENCODED_FILE_BYTES)
@@ -69,7 +77,10 @@ class FileEntry(Entry):
     def codec_metadata(self) -> Self:
         if self.executable_bits & ~0o111:
             raise ValueError("only executable permission bits are supported")
-        validate_options(self.codec, self.parameters, {})
+        validate_options("zstd" if self.codec == "zstd_dictionary" else self.codec,
+                         self.parameters, {})
+        if (self.codec == "zstd_dictionary") != (self.dictionary_id is not None):
+            raise ValueError("dictionary codec requires exactly one asset reference")
         if self.codec == "stored" and self.length != self.size:
             raise ValueError("stored payload length must equal file size")
         return self
@@ -81,9 +92,22 @@ class Manifest(BaseModel):
     entries: list[Annotated[FileEntry | DirectoryEntry, Field(discriminator="kind")]] = Field(
         max_length=MAX_ENTRIES
     )
+    assets: dict[str, str] = Field(default_factory=dict, max_length=64)
 
     @model_validator(mode="after")
     def layout(self) -> Self:
+        referenced = {entry.dictionary_id for entry in self.entries
+                      if isinstance(entry, FileEntry) and entry.dictionary_id is not None}
+        if referenced != set(self.assets):
+            raise ValueError("missing or unreferenced dictionary assets")
+        for digest, encoded in self.assets.items():
+            if len(encoded) > 4 * ((MAX_DICTIONARY_BYTES + 2) // 3):
+                raise ValueError("dictionary exceeds byte limit")
+            data = base64.b64decode(encoded, validate=True)
+            if (not 0 < len(data) <= MAX_DICTIONARY_BYTES
+                    or hashlib.sha256(data).hexdigest() != digest
+                    or base64.b64encode(data).decode("ascii") != encoded):
+                raise ValueError("invalid dictionary hash or encoding")
         paths: dict[str, str] = {}
         destinations: set[str] = set()
         previous = ""
@@ -120,7 +144,8 @@ def encode_manifest(manifest: Manifest) -> bytes:
     try:
         validated = Manifest.model_validate(manifest.model_dump())
         data = json.dumps(
-            validated.model_dump(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            validated.model_dump(exclude_defaults=True), ensure_ascii=False,
+            sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
     except (ValidationError, UnicodeError, ValueError, RecursionError):
         raise ArchiveFormatError("Invalid archive manifest") from None
@@ -129,7 +154,7 @@ def encode_manifest(manifest: Manifest) -> bytes:
     return data
 
 
-def parse_manifest(data: bytes, *, payload_size: int) -> Manifest:
+def parse_manifest(data: bytes, *, payload_size: int, version: int = VERSION) -> Manifest:
     """Validate manifest bytes against the actual remaining archive length."""
     if not 0 < len(data) <= MAX_MANIFEST_BYTES:
         raise ArchiveFormatError("Invalid manifest length")
@@ -137,6 +162,8 @@ def parse_manifest(data: bytes, *, payload_size: int) -> Manifest:
         raise ArchiveFormatError("Invalid payload length")
     try:
         manifest = Manifest.model_validate(json.loads(data.decode("utf-8")))
+        if version not in (1, 2) or (version == 1 and manifest.assets):
+            raise ValueError("unsupported manifest version")
         canonical = encode_manifest(manifest)
     except (ValidationError, UnicodeError, ValueError, RecursionError):
         raise ArchiveFormatError("Invalid archive manifest") from None
@@ -155,7 +182,7 @@ def parse_header(data: bytes) -> int:
     magic, version, manifest_length = HEADER.unpack(data)
     if magic != MAGIC:
         raise ArchiveFormatError("Invalid archive magic")
-    if version != VERSION:
+    if version not in (VERSION, 2):
         raise ArchiveFormatError("Unsupported archive version")
     if not 0 < manifest_length <= MAX_MANIFEST_BYTES:
         raise ArchiveFormatError("Invalid manifest length")

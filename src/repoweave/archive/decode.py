@@ -20,7 +20,7 @@ def unpack(archive: Path, output: Path) -> Manifest:
                         if isinstance(entry, DirectoryEntry):
                             os.mkdir(path.name, mode=0o700, dir_fd=directory)
                         else:
-                            data = decode_file(source, entry)
+                            data = decode_file(source, entry, manifest.assets)
                             fd = os.open(
                                 path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                                 0o600, dir_fd=directory,

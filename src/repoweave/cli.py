@@ -26,8 +26,15 @@ def _analyze(input_root: Path, output: Path, data_dir: Path) -> None:
     snapshot = create_snapshot(
         input_root, data_dir / "snapshots", exclude_paths=(data_dir, report_exclusion),
     )
+    from repoweave.repository_graph import build_graph, context_order, group_files
+
+    graph = build_graph(snapshot)
+    report = snapshot.to_report()
+    report["repository_graph"] = graph.to_report()
+    report["candidate_context"] = context_order(graph)
+    report["groups"] = {strategy: group_files(graph, strategy) for strategy in ("graph", "extension")}
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=output.parent) as temporary:
-        json.dump(snapshot.to_report(), temporary, sort_keys=True, indent=2)
+        json.dump(report, temporary, sort_keys=True, indent=2)
         temporary.write("\n")
         temporary.flush()
         os.fsync(temporary.fileno())
@@ -58,6 +65,25 @@ def main() -> None:
     verification.add_argument("original", type=Path)
     verification.add_argument("restored", type=Path)
     verification.add_argument("--exclude", action="append", default=[], metavar="RELATIVE_PATH")
+    benchmarking = commands.add_parser("benchmark", help="Measure verified archives in fresh processes")
+    benchmarking.add_argument("input", type=Path)
+    benchmarking.add_argument("--policy", type=Path, required=True)
+    benchmarking.add_argument("--control-policy", type=Path)
+    benchmarking.add_argument("--output", type=Path, required=True)
+    benchmarking.add_argument("--repeats", type=int, default=3)
+    benchmarking.add_argument("--warmups", type=int, default=1)
+    benchmarking.add_argument("--max-encode-seconds", type=float, default=300.0)
+    benchmarking.add_argument("--max-decode-seconds", type=float, default=300.0)
+    benchmarking.add_argument("--max-memory-bytes", type=int, default=1024 * 1024 * 1024)
+    benchmarking.add_argument("--splits", type=Path)
+    benchmarking.add_argument("--repository-id")
+    benchmarking.add_argument("--partition", choices=("validation", "test"), default="validation")
+    benchmarking.add_argument("--final", action="store_true")
+    training = commands.add_parser("train-dictionaries", help="Train only designated training repositories")
+    training.add_argument("--splits", type=Path, required=True)
+    training.add_argument("--repository", action="append", required=True, metavar="ID=PATH")
+    training.add_argument("--grouping", choices=("none", "extension", "graph"), default="none")
+    training.add_argument("--dictionary-size", type=int, default=8192)
     arguments = parser.parse_args()
     try:
         if arguments.command == "unpack":
@@ -77,9 +103,76 @@ def main() -> None:
             snapshot = pack(
                 arguments.input, arguments.output, data_dir=settings.data_dir,
                 codec_id=policy.codec, parameters=policy.parameters,
+                policy=policy,
             )
             print(f"Archive: {arguments.output}\nSnapshot: {snapshot.snapshot_id}")
             _show_exclusions(snapshot.exclusions)
+            if policy.dictionary_id:
+                from repoweave.dictionaries.train import load_bundle
+
+                bundle = load_bundle(settings.data_dir / "dictionaries", policy.dictionary_id)
+                _, fallbacks = bundle.for_snapshot(snapshot)
+                print(f"Dictionary groups falling back to plain Zstd: {fallbacks!r}")
+        elif arguments.command == "train-dictionaries":
+            from repoweave.benchmarks.splits import load_splits
+            from repoweave.dictionaries.train import train_dictionaries
+
+            splits = load_splits(arguments.splits)
+            repositories = {}
+            roots: set[Path] = set()
+            for specification in arguments.repository:
+                repository_id, separator, path = specification.partition("=")
+                if not separator or not path or repository_id in repositories:
+                    raise ArchiveFormatError("Use unique repository ID=PATH arguments")
+                splits.require(repository_id, "train")
+                root = Path(path).resolve()
+                if root in roots:
+                    raise ArchiveFormatError("Duplicate training repository root")
+                roots.add(root)
+                repositories[repository_id] = create_snapshot(
+                    Path(path), settings.data_dir / "snapshots", exclude_paths=(settings.data_dir,),
+                )
+            bundle = train_dictionaries(repositories, splits, grouping=arguments.grouping,
+                                        dictionary_size=arguments.dictionary_size)
+            output = bundle.save(settings.data_dir / "dictionaries")
+            print(f"Dictionary bundle: {bundle.dictionary_id}\nArtifact: {output}")
+            if not bundle.groups:
+                print("No nonempty training samples; all groups fall back to plain Zstd")
+            for key, group in bundle.groups.items():
+                print(f"Group {key!r}: {group.status}")
+        elif arguments.command == "benchmark":
+            from repoweave.archive.filesystem import open_directory, require_absent
+            from repoweave.benchmarks.runner import benchmark
+            from repoweave.benchmarks.splits import load_splits
+            from repoweave.routing.objective import Limits
+            from repoweave.routing.policy import write_json
+            from repoweave.routing.schemas import load_policy
+
+            if arguments.input.is_symlink() or not arguments.input.is_dir():
+                raise RepositoryError("Input must be an existing directory, not a symlink")
+            with open_directory(arguments.output.parent, create=True) as parent:
+                require_absent(parent, arguments.output.name)
+            root, output_parent = arguments.input.resolve(), arguments.output.parent.resolve()
+            excluded_output = (output_parent if output_parent != root and output_parent.is_relative_to(root)
+                               else arguments.output)
+            snapshot = create_snapshot(arguments.input, settings.data_dir / "snapshots",
+                                       exclude_paths=(settings.data_dir, excluded_output))
+            report = benchmark(
+                snapshot, load_policy(arguments.policy), data_dir=settings.data_dir,
+                repeats=arguments.repeats, warmups=arguments.warmups,
+                limits=Limits(encode_seconds=arguments.max_encode_seconds,
+                              decode_seconds=arguments.max_decode_seconds,
+                              peak_memory_bytes=arguments.max_memory_bytes),
+                splits=load_splits(arguments.splits) if arguments.splits else None,
+                repository_id=arguments.repository_id, partition=arguments.partition,
+                final=arguments.final,
+                control_policy=load_policy(arguments.control_policy) if arguments.control_policy else None,
+            )
+            write_json(arguments.output, report)
+            print(f"Benchmark report: {arguments.output}")
+            for result in report["results"]:
+                print(f"{result['name']}: {result['status']}; eligible={result['eligible']}; "
+                      f"archive_bytes={result['score_bytes']}")
         elif arguments.command == "verify":
             from repoweave.archive.integrity import verify
 
@@ -94,6 +187,8 @@ def main() -> None:
         parser.exit(2, f"{parser.prog}: {error}\n")
     except OSError:
         parser.exit(2, f"{parser.prog}: Filesystem operation failed; check paths and permissions\n")
+    except ValueError:
+        parser.exit(2, f"{parser.prog}: Invalid dataset, training, or benchmark request\n")
     except KeyboardInterrupt:
         parser.exit(130, f"{parser.prog}: Interrupted\n")
 

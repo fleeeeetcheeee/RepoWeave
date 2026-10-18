@@ -3,10 +3,12 @@
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from . import lzma, stored, zstd
+from . import lzma, stored, zstd, zstd_dictionary
 from .base import Codec, CodecError
 
-CODECS: Mapping[str, Codec] = MappingProxyType({"stored": stored, "zstd": zstd, "lzma": lzma})
+CODECS: Mapping[str, Codec] = MappingProxyType({
+    "stored": stored, "zstd": zstd, "lzma": lzma, "zstd_dictionary": zstd_dictionary,
+})
 
 
 def get_codec(codec_id: str) -> Codec:

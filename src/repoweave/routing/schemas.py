@@ -1,12 +1,14 @@
-"""The fixed baseline policy needed by the pack command."""
+"""Validated, immutable encoding policies and their content identities."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from repoweave.archive.filesystem import open_regular
 from repoweave.archive.manifest import ArchiveFormatError
+
+from .policy import content_id, write_json
 
 
 class Policy(BaseModel):
@@ -16,8 +18,29 @@ class Policy(BaseModel):
     name: str = Field(default="baseline", min_length=1, max_length=100)
     codec: Literal["stored", "zstd", "lzma"] = "zstd"
     zstd_level: int = Field(default=3, ge=-7, le=22)
-    dictionary_id: None = None
-    grouping: Literal["none"] = "none"
+    dictionary_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    grouping: Literal["none", "extension", "graph"] = "none"
+
+    @model_validator(mode="after")
+    def dictionary_codec(self) -> Self:
+        if self.dictionary_id is not None and self.codec != "zstd":
+            raise ValueError("Dictionary policies require Zstd")
+        if self.dictionary_id is None and self.grouping != "none":
+            raise ValueError("Grouping requires a dictionary bundle")
+        return self
+
+    @property
+    def policy_id(self) -> str:
+        return content_id(self.model_dump())
+
+    def save(self, directory: Path) -> Path:
+        output = directory / f"{self.policy_id}.json"
+        if output.exists():
+            if load_policy(output) != self:
+                raise ArchiveFormatError("Policy identity collision")
+        else:
+            write_json(output, self.model_dump())
+        return output
 
     @property
     def parameters(self) -> dict[str, int]:

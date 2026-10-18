@@ -11,9 +11,9 @@ uv run repoweave verify examples/demo_repository .repoweave/restored
 Choose new output names on repeat runs: existing archives and extraction directories
 are never replaced, including empty directories and dangling symlinks. `pack` also
 accepts `--codec stored`, `--codec zstd` (the default), or `--codec lzma` instead of
-`--policy`. The baseline policy schema is the fixed subset from DESIGN.md step 8.1,
-included here because the step 6 command requires it. Dictionary policies, grouping,
-policy promotion/IDs, and benchmark work remain later steps.
+`--policy`. Policies now have content IDs and optional trained dictionary bundles;
+see [benchmarks and dictionaries](benchmarks.md). Active-policy promotion remains a
+later workflow step. The committed baseline is unchanged.
 
 Packing captures a version 2 snapshot under `REPOWEAVE_DATA_DIR/snapshots`. It encodes
 only those copied bytes, checking their hash and executable mask. Compression is kept
@@ -23,7 +23,7 @@ at a time. The complete temporary archive is decoded and hash-checked before pub
 Identical snapshots with the same policy produce identical archives in the same locked
 environment. Completed snapshots remain available after a failed pack.
 
-Unpacking reads the [bounded V1 format](archive-format.md), decodes each file with its
+Unpacking reads the [bounded V1/V2 formats](archive-format.md), decodes each file with its
 recorded codec and parameters, checks its size/hash, and restores its executable bits.
 It uses no application settings, service credentials, original repository, or active
 policy. Output files use `0o600 | executable_bits`; directories use `0o700`. Other

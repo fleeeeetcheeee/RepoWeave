@@ -1,5 +1,7 @@
 """Write deterministic archives from version 2 snapshot metadata and copied bytes."""
 
+import base64
+import hashlib
 import json
 import os
 import shutil
@@ -52,22 +54,30 @@ def _snapshot_manifest(snapshot: Snapshot) -> Manifest:
 
 def _entry_bytes(entry: FileEntry) -> int:
     return len(json.dumps(
-        entry.model_dump(), sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        entry.model_dump(exclude_defaults=True), sort_keys=True,
+        ensure_ascii=False, separators=(",", ":")
     ).encode("utf-8"))
 
 
 def write_archive(
     snapshot: Snapshot, output: Path, *, codec_id: str = "zstd",
     parameters: Mapping[str, int] | None = None,
+    dictionaries: Mapping[str, bytes] | None = None,
 ) -> Manifest:
     parameters = {} if parameters is None else dict(parameters)
     validate_options(codec_id, parameters, {})
     codec = get_codec(codec_id)
+    if dictionaries and codec_id != "zstd":
+        raise ArchiveFormatError("Dictionaries require Zstd encoding")
+    dictionaries = {} if dictionaries is None else dictionaries
+    for asset in dictionaries.values():
+        validate_options("zstd_dictionary", parameters, {"dictionary": asset})
     original = _snapshot_manifest(snapshot)
     with open_directory(output.parent, create=True) as parent:
         require_absent(parent, output.name)
         with staging_directory(parent) as (_, staging), tempfile.TemporaryFile() as payloads:
             entries: list[FileEntry | DirectoryEntry] = []
+            assets: dict[str, str] = {}
             for entry in original.entries:
                 if isinstance(entry, DirectoryEntry):
                     entries.append(entry)
@@ -77,22 +87,38 @@ def write_archive(
                     if os.fstat(source.fileno()).st_mode & 0o111 != entry.executable_bits:
                         raise ArchiveFormatError("Snapshot executable bits changed")
                 check_bytes(data, entry.size, entry.sha256)
-                compressed = codec.encode(data, parameters, {})
+                dictionary = dictionaries.get(entry.path)
+                selected_codec = "zstd_dictionary" if dictionary is not None else codec_id
+                digest = hashlib.sha256(dictionary).hexdigest() if dictionary is not None else None
+                compressed = (get_codec(selected_codec).encode(
+                    data, parameters, {"dictionary": dictionary},
+                ) if dictionary is not None else codec.encode(data, parameters, {}))
                 stored = entry.model_copy(update={"offset": payloads.tell()})
                 candidate = stored.model_copy(update={
-                    "codec": codec_id, "parameters": parameters, "length": len(compressed),
+                    "codec": selected_codec, "parameters": parameters, "length": len(compressed),
+                    "dictionary_id": digest,
                 })
-                if len(compressed) + _entry_bytes(candidate) < len(data) + _entry_bytes(stored):
+                new_assets = dict(assets)
+                if digest is not None and dictionary is not None:
+                    new_assets[digest] = base64.b64encode(dictionary).decode("ascii")
+                # shortcut: charge first use fully; amortize groups if small-file benchmarks justify it.
+                asset_cost = len(json.dumps(new_assets, separators=(",", ":"))) - len(
+                    json.dumps(assets, separators=(",", ":")))
+                if new_assets and not assets:
+                    asset_cost += len(',"assets":{}')
+                if (len(compressed) + _entry_bytes(candidate) + asset_cost
+                        < len(data) + _entry_bytes(stored)):
+                    assets = new_assets
                     entries.append(candidate)
                     payloads.write(compressed)
                 else:
                     entries.append(stored)
                     payloads.write(data)
-            manifest = Manifest(entries=entries)
+            manifest = Manifest(entries=entries, assets=assets)
             encoded = encode_manifest(manifest)
             fd = os.open("archive", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=staging)
             with os.fdopen(fd, "w+b") as archive:
-                archive.write(HEADER.pack(MAGIC, VERSION, len(encoded)))
+                archive.write(HEADER.pack(MAGIC, 2 if assets else VERSION, len(encoded)))
                 archive.write(encoded)
                 payloads.seek(0)
                 shutil.copyfileobj(payloads, archive, length=1024 * 1024)

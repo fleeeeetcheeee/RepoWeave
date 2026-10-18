@@ -6,9 +6,11 @@ from typing import Protocol
 MAX_FILE_BYTES = 64 * 1024 * 1024
 MAX_ENCODED_FILE_BYTES = 2 * MAX_FILE_BYTES
 MAX_DECODER_MEMORY = 128 * 1024 * 1024
+MAX_DICTIONARY_BYTES = 1024 * 1024
 
 PARAMETER_BOUNDS = {
     "stored": {}, "zstd": {"level": (-7, 22)}, "lzma": {"preset": (0, 9)},
+    "zstd_dictionary": {"level": (-7, 22)},
 }
 
 
@@ -30,7 +32,11 @@ class Codec(Protocol):
 def validate_options(
     codec_id: str, parameters: Mapping[str, int], assets: Mapping[str, bytes],
 ) -> None:
-    if assets:
+    if codec_id == "zstd_dictionary":
+        if (set(assets) != {"dictionary"} or not isinstance(assets["dictionary"], bytes)
+                or not 0 < len(assets["dictionary"]) <= MAX_DICTIONARY_BYTES):
+            raise CodecError("A bounded dictionary asset is required")
+    elif assets:
         raise CodecError("V1 codecs do not support assets")
     if codec_id not in PARAMETER_BOUNDS:
         raise CodecError("Unsupported codec")

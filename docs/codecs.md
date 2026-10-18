@@ -1,4 +1,4 @@
-# V1 codecs
+# Local codecs
 
 `repoweave.codecs.registry.get_codec(id)` returns an implementation of the typed
 `Codec` protocol in `codecs/base.py`:
@@ -10,7 +10,7 @@ codec.decode(data: bytes, parameters, assets, expected_size: int) -> bytes
 
 Parameters are a mapping of option names to integers; assets are a mapping of
 IDs to bytes. V1 requires empty assets. Registry IDs are exactly `stored`, `zstd`,
-and `lzma`. Unsupported IDs/options/assets and malformed payloads raise
+and `lzma`; V2 adds `zstd_dictionary`. Unsupported IDs/options/assets and malformed payloads raise
 `CodecError`; no codec dynamically imports code named by an archive.
 
 | Codec | Parameters | Representation |
@@ -18,6 +18,13 @@ and `lzma`. Unsupported IDs/options/assets and malformed payloads raise
 | stored | `{}` | Original bytes |
 | zstd | Optional `level`, -7 through 22; default 3 | One standard Zstd frame |
 | lzma | Optional `preset`, 0 through 9; default 6 | One XZ stream |
+| zstd_dictionary | Optional `level`, -7 through 22; default 3 | One Zstd frame with a trained dictionary |
+
+`zstd_dictionary` requires exactly `{"dictionary": dictionary_bytes}` in its asset map,
+bounded to 1 MiB. It checks the trained dictionary format/ID and uses the same frame,
+window, output, checksum, and trailing-data checks as plain zstd. Archive V2 maps a
+content-hashed embedded asset to this codec input; dictionary training and policy
+selection are outside the decoder. Existing V1 codecs still reject all assets.
 
 Encode accepts at most 64 MiB. Decode accepts at most 128 MiB of encoded bytes
 and requires an exact expected size between zero and 64 MiB. Decoders reject
@@ -42,4 +49,4 @@ Invalid codec options remain errors; fallback does not mask codec failures.
 The archive layer remains responsible for canonical metadata sizing, full-archive
 limits, SHA-256 verification, safe paths, and publication. Corruption that still
 forms valid bytes, especially stored bytes, requires that archive hash check.
-Inventory and pack/unpack integration are not part of this codec implementation.
+Inventory and pack/unpack integration live in the repository and archive layers.

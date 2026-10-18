@@ -1,9 +1,11 @@
-# RPW archive format, version 1
+# RPW archive formats, versions 1 and 2
 
 This is the integration contract for DESIGN.md step 6.2. Header and manifest
 validation are implemented in `repoweave.archive.manifest`; reader/writer and
 encode/decode modules implement payload verification and safe publication.
 A valid manifest alone does not verify an archive. See [local usage](archive-usage.md).
+The original V1 contract below is preserved. V2 adds embedded dictionaries as specified
+at the end of this document; writers continue producing V1 when no dictionary is used.
 
 ## Envelope
 
@@ -154,3 +156,39 @@ see [the codec API](codecs.md). Manifest validation shares option validation and
 size limits with `codecs/base.py`. Assembly uses version 2 snapshot metadata and
 verifies copied bytes and executable masks before encoding. Integration tests cover
 inventory, codecs, manifest validation, extraction, and CLI round trips.
+
+## V2 embedded dictionaries
+
+V2 uses the same magic, 18-byte envelope, integer encoding, canonical JSON rules,
+payload offsets, filesystem scope, and resource limits. Its header version is `2`.
+Readers accept versions 1 and 2 and reject every other version. V1 manifests may not
+contain dictionary assets/references; older V1 readers reject a V2 header. Current
+writers still produce byte-compatible V1 archives when no dictionary is used.
+
+V2 adds an optional root `assets` object mapping the dictionary's 64-character
+lowercase SHA-256 to its canonical padded RFC 4648 base64 string. There are at most
+64 assets, each decoding to 1–1,048,576 bytes. The existing 16 MiB manifest limit
+includes the base64 representation. Asset hashes, base64 validity/canonicality, and
+raw lengths are checked before decoding any file. Duplicate keys remain invalid.
+
+A dictionary-compressed file has `codec: "zstd_dictionary"`, the same optional
+integer `level` parameter as zstd, and a required `dictionary_id` equal to one of
+the embedded asset hashes. Other codecs must omit `dictionary_id`. Root `assets`
+is omitted when empty; default/unused fields and explicit null values are noncanonical.
+The set of embedded assets must exactly equal the set referenced by file entries:
+missing and unreferenced assets are both rejected. V2 files still occupy contiguous
+payload ranges in sorted path order; assets occupy manifest bytes, not payload ranges.
+
+Dictionary bytes must be a trained Zstd dictionary, not a raw-content dictionary.
+The frame dictionary ID must match the embedded dictionary's internal ID. All usual
+frame/window/output/checksum limits apply, and reconstructed file hashes are checked.
+No original input, trainer, registry, mutable policy, or external asset is needed by
+the decoder. There are no file-to-file decode dependencies; the only added dependency
+is a content-hashed asset embedded in the same archive.
+
+The writer counts canonical per-file metadata plus the incremental serialized asset
+map when comparing a candidate against stored bytes. A dictionary is embedded once
+per content hash, and only if used. The first selected file pays the complete asset
+cost; later files reuse it. This conservative greedy choice can miss benefits that
+would appear only after amortizing a dictionary over several small files. Benchmarks
+count the actual entire archive, including header, manifest, base64, and payload.

@@ -10,7 +10,7 @@ from repoweave.codecs import base
 from repoweave.codecs.base import CodecError, validate_options
 from repoweave.codecs.registry import CODECS, encode_with_fallback, get_codec
 
-CODEC_IDS = tuple(CODECS)
+CODEC_IDS = ("stored", "zstd", "lzma")
 SAMPLES = [b"", b"a", b"repeated source line\n" * 4096, bytes(range(256)) * 8,
            random.Random(42).randbytes(4096), "日本語 café\n".encode()]
 
@@ -140,8 +140,8 @@ def test_lzma_rejects_legacy_container() -> None:
 
 
 def test_registry_rejects_unregistered_identifiers() -> None:
-    assert set(CODECS) == {"stored", "zstd", "lzma"}
-    for name in ("", "os.system", "repoweave.codecs.zstd", "zstd_dictionary"):
+    assert set(CODECS) == {*CODEC_IDS, "zstd_dictionary"}
+    for name in ("", "os.system", "repoweave.codecs.zstd", "neural"):
         with pytest.raises(CodecError):
             get_codec(name)
         with pytest.raises(CodecError):
@@ -174,7 +174,8 @@ def test_clean_process_does_not_load_application_or_cloud_modules(tmp_path) -> N
         [sys.executable, "-c", """
 import sys
 from repoweave.codecs.registry import CODECS
-for codec in CODECS.values():
+for name in ('stored', 'zstd', 'lzma'):
+    codec = CODECS[name]
     assert codec.decode(codec.encode(b'hello', {}, {}), {}, {}, 5) == b'hello'
 assert not any(name.startswith(('repoweave.config', 'repoweave.agents',
     'repoweave.workflows', 'daytona', 'langsmith', 'langgraph', 'dotenv')) for name in sys.modules)

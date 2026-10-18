@@ -56,14 +56,14 @@ def test_mixed_manifest_round_trip_and_unicode() -> None:
     data = manifest_bytes(entries)
     assert b"\xc3\xa9" in data
     manifest = parse_manifest(data, payload_size=44)
-    assert manifest.model_dump() == {"entries": entries}
+    assert manifest.model_dump(exclude_defaults=True) == {"entries": entries}
     assert manifest.payload_size == 44
     assert encode_manifest(manifest) == data
 
 
 @pytest.mark.parametrize("header", [
     b"", b"short", HEADER.pack(MAGIC, VERSION, 14) + b"x",
-    HEADER.pack(b"WRONG!!!", VERSION, 14), HEADER.pack(MAGIC, 2, 14),
+    HEADER.pack(b"WRONG!!!", VERSION, 14), HEADER.pack(MAGIC, 3, 14),
     HEADER.pack(MAGIC, VERSION, 0), HEADER.pack(MAGIC, VERSION, MAX_MANIFEST_BYTES + 1),
 ])
 def test_invalid_headers(header: bytes) -> None:

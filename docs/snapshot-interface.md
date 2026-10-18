@@ -110,3 +110,7 @@ The same report is persisted alongside the snapshot.
 Reports are published atomically without overwriting any existing destination. Choose
 a fresh report filename for another run. A report-write failure leaves any completed
 snapshot intact and returns a nonzero exit status. Local analysis needs no service keys.
+
+Step 7 adds [repository graph, grouping, and candidate context metadata](repository-graph.md)
+to CLI analysis reports. `Snapshot.to_report()` itself remains the unchanged snapshot
+contract, so snapshot IDs and existing callers are unaffected.
